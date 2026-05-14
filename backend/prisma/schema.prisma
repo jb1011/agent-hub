@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  user
+  builder
+  admin
+}
+
+enum AgentStatus {
+  draft
+  published
+  archived
+}
+
+enum BillingType {
+  per_call
+  per_job
+}
+
+enum JobStatus {
+  quoted
+  paid
+  in_progress
+  completed
+  failed
+  cancelled
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String?  @unique
+  wallet      String?  @unique
+  displayName String?
+  role        UserRole @default(user)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  agents     Agent[] @relation("BuilderAgents")
+  jobsAsBuyer Job[]  @relation("BuyerJobs")
+  reviews    Review[]
+}
+
+model Agent {
+  id            String      @id @default(cuid())
+  slug          String      @unique
+  title         String
+  description   String
+  category      String
+  builderId     String
+  builder       User        @relation("BuilderAgents", fields: [builderId], references: [id], onDelete: Restrict)
+  status        AgentStatus @default(draft)
+  /// Price in smallest USDC units (6 decimals), e.g. 1_000_000 = 1 USDC
+  priceMicroUsdc BigInt
+  billingType   BillingType
+  endpointUrl   String?
+  mcpMetadata   Json?
+  avgRating     Float?
+  reviewCount   Int         @default(0)
+  publishedAt   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  jobs     Job[]
+  reviews  Review[]
+  versions AgentVersion[]
+
+  @@index([status, category])
+  @@index([builderId])
+}
+
+model AgentVersion {
+  id        String   @id @default(cuid())
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  version   Int
+  snapshot  Json
+  createdAt DateTime @default(now())
+
+  @@unique([agentId, version])
+}
+
+model Job {
+  id             String    @id @default(cuid())
+  agentId        String
+  agent          Agent     @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  buyerId        String
+  buyer          User      @relation("BuyerJobs", fields: [buyerId], references: [id], onDelete: Restrict)
+  status         JobStatus @default(quoted)
+  amountMicroUsdc BigInt
+  idempotencyKey String?   @unique
+  contractRef    String?
+  onchainJobId   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  reviews     Review[]
+  usageEvents UsageEvent[]
+
+  @@index([buyerId, status])
+  @@index([agentId])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  rating    Int
+  text      String?
+  createdAt DateTime @default(now())
+
+  @@unique([jobId, userId])
+  @@index([agentId])
+}
+
+model UsageEvent {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  latencyMs Int?
+  error     String?
+  toolName  String?
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+}
