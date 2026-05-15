@@ -40,7 +40,14 @@ const features = [
   },
 ];
 
-const partners = ["ARC Protocol", "USDC", "Chainlink", "Polygon", "Anthropic", "OpenAI"];
+const partners = [
+  "ARC Protocol",
+  "USDC",
+  "Chainlink",
+  "Polygon",
+  "Anthropic",
+  "OpenAI",
+];
 
 export default function HomePage() {
   const { data: services = [] } = useQuery({
@@ -54,8 +61,14 @@ export default function HomePage() {
   });
 
   const liveStats = [
-    { label: "Agents", value: services.length > 0 ? `${services.length}` : "—" },
-    { label: "Providers", value: providers.length > 0 ? `${providers.length}` : "—" },
+    {
+      label: "Agents",
+      value: services.length > 0 ? `${services.length}` : "—",
+    },
+    {
+      label: "Providers",
+      value: providers.length > 0 ? `${providers.length}` : "—",
+    },
     { label: "Avg Rating", value: "4.7★" },
   ];
 
@@ -83,21 +96,18 @@ export default function HomePage() {
           style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)" }}
         >
           {[...Array(5)].map((_, i) => (
-            <div key={i} style={{ gridColumn: i + 2, borderLeft: `1px solid ${GRID}` }} />
+            <div
+              key={i}
+              style={{ gridColumn: i + 2, borderLeft: `1px solid ${GRID}` }}
+            />
           ))}
         </div>
 
-        <div
-          className="absolute left-0 right-0"
-          style={{ top: "60%", borderTop: `1px solid ${GRID}` }}
-        />
+        <div className="absolute left-0 right-0" />
 
         <div className="relative flex flex-col md:flex-row">
           {/* Left: description + CTA */}
-          <div
-            className="flex flex-col justify-end px-6 md:px-10 pb-8 pt-16 md:pt-0 md:w-[30%] shrink-0"
-            style={{ borderRight: `1px solid ${GRID}` }}
-          >
+          <div className="flex flex-col justify-end px-6 md:px-10 pb-8 pt-16 md:pt-0 md:w-[30%] shrink-0">
             <div className="mb-6">
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-2 h-2" style={{ background: "#E85A00" }} />
@@ -138,10 +148,7 @@ export default function HomePage() {
           </div>
 
           {/* Right: live stats */}
-          <div
-            className="hidden md:flex flex-col justify-between w-[18%] shrink-0 py-8 px-5"
-            style={{ borderLeft: `1px solid ${GRID}` }}
-          >
+          <div className="hidden md:flex flex-col justify-between w-[18%] shrink-0 py-8 px-5">
             <div>
               <div className="text-xs font-semibold tracking-widest uppercase text-black/40 mb-3">
                 Live Stats
@@ -150,7 +157,10 @@ export default function HomePage() {
                 {liveStats.map((s) => (
                   <div
                     key={s.label}
-                    style={{ borderBottom: `1px solid ${GRID}`, paddingBottom: "12px" }}
+                    style={{
+                      borderBottom: `1px solid ${GRID}`,
+                      paddingBottom: "12px",
+                    }}
                   >
                     <div className="text-[10px] uppercase tracking-widest text-black/40">
                       {s.label}
@@ -227,7 +237,8 @@ export default function HomePage() {
               key={f.num}
               className="p-7 flex flex-col gap-6"
               style={{
-                borderRight: i < features.length - 1 ? `1px solid ${GRID}` : undefined,
+                borderRight:
+                  i < features.length - 1 ? `1px solid ${GRID}` : undefined,
                 borderBottom: `1px solid ${GRID}`,
               }}
             >
@@ -239,7 +250,9 @@ export default function HomePage() {
               </div>
               <div>
                 <h4 className="font-bold mb-2 text-base">{f.title}</h4>
-                <p className="text-xs leading-relaxed text-black/60">{f.body}</p>
+                <p className="text-xs leading-relaxed text-black/60">
+                  {f.body}
+                </p>
               </div>
             </div>
           ))}
@@ -297,7 +310,10 @@ export default function HomePage() {
               <div
                 key={item.label}
                 className="p-7 flex flex-col gap-4"
-                style={{ borderLeft: `1px solid ${GRID}`, borderBottom: `1px solid ${GRID}` }}
+                style={{
+                  borderLeft: `1px solid ${GRID}`,
+                  borderBottom: `1px solid ${GRID}`,
+                }}
               >
                 <div
                   className="w-9 h-9 flex items-center justify-center text-white"
@@ -307,7 +323,9 @@ export default function HomePage() {
                 </div>
                 <div>
                   <div className="font-bold mb-1.5 text-sm">{item.label}</div>
-                  <p className="text-xs leading-relaxed text-black/60">{item.desc}</p>
+                  <p className="text-xs leading-relaxed text-black/60">
+                    {item.desc}
+                  </p>
                 </div>
               </div>
             ))}
@@ -333,7 +351,10 @@ export default function HomePage() {
             <div
               key={p}
               className="shrink-0 px-6 md:px-10 py-5 text-xs font-bold uppercase tracking-widest text-black/40 hover:text-black/70 transition-colors cursor-pointer"
-              style={{ borderRight: i < partners.length - 1 ? `1px solid ${GRID}` : undefined }}
+              style={{
+                borderRight:
+                  i < partners.length - 1 ? `1px solid ${GRID}` : undefined,
+              }}
             >
               {p}
             </div>
@@ -422,10 +443,16 @@ export default function HomePage() {
         {/* Right stat block */}
         <div
           className="hidden md:flex flex-col items-center justify-center w-72 shrink-0 gap-6 px-10"
-          style={{ background: "#141414", borderLeft: `1px solid rgba(255,255,255,0.07)` }}
+          style={{
+            background: "#141414",
+            borderLeft: `1px solid rgba(255,255,255,0.07)`,
+          }}
         >
           {[
-            { value: services.length > 0 ? `${services.length}+` : "—", label: "Active Agents" },
+            {
+              value: services.length > 0 ? `${services.length}+` : "—",
+              label: "Active Agents",
+            },
             { value: "$0", label: "Listing Fee" },
             { value: "USDC", label: "Instant Payouts", orange: true },
           ].map((item, i) => (
@@ -475,7 +502,11 @@ export default function HomePage() {
 
         <div className="flex flex-wrap gap-6 text-[10px] uppercase tracking-widest font-medium text-black/40">
           {["Privacy", "Terms", "Docs", "Status", "GitHub"].map((link) => (
-            <a key={link} href="#" className="hover:text-black transition-colors">
+            <a
+              key={link}
+              href="#"
+              className="hover:text-black transition-colors"
+            >
               {link}
             </a>
           ))}

@@ -26,11 +26,14 @@ export function RegisterBox() {
         </span>
         <h3
           className="text-lg font-bold mt-1 mb-1"
-          style={{ fontFamily: "var(--font-space-grotesk), sans-serif" }}
+          style={{
+            color: "#FFF",
+            fontFamily: "var(--font-space-grotesk), sans-serif",
+          }}
         >
           Register your agent
         </h3>
-        <p className="text-xs leading-relaxed text-black/60 max-w-sm">
+        <p className="text-xs leading-relaxed text-white/90 max-w-sm">
           Copy the prompt below and run it in your agent to register as a
           provider and list your services on Skill Hub.
         </p>
