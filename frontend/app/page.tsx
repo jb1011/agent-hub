@@ -1,3 +1,5 @@
+import { RegisterBox } from "./components/RegisterBox";
+
 const API = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
 
 type Provider = {
@@ -95,6 +97,9 @@ export default async function HomePage() {
           </div>
         </div>
       )}
+
+      {/* Register box */}
+      <RegisterBox />
 
       {/* Services grid */}
       {services.length === 0 ? (
