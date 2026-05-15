@@ -7,130 +7,129 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserRole {
-  user
-  builder
-  admin
+enum ProviderStatus {
+  REGISTERED
+  ACTIVE
+  SUSPENDED
 }
 
-enum AgentStatus {
-  draft
-  published
-  archived
+enum TrustLevel {
+  UNVERIFIED
+  VERIFIED
+  CERTIFIED
+  HOSTED
 }
 
-enum BillingType {
-  per_call
-  per_job
+enum ServiceStatus {
+  REGISTERED
+  ACTIVE
+  INACTIVE
+  SUSPENDED
 }
 
 enum JobStatus {
-  quoted
-  paid
-  in_progress
-  completed
-  failed
-  cancelled
+  CREATED
+  FUNDED
+  RUNNING
+  SUBMITTED
+  ACCEPTED
+  SETTLED
+  FAILED
+  EXPIRED
+  REFUNDED
+  DISPUTED
 }
 
-model User {
-  id          String   @id @default(cuid())
-  email       String?  @unique
-  wallet      String?  @unique
-  displayName String?
-  role        UserRole @default(user)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  agents     Agent[] @relation("BuilderAgents")
-  jobsAsBuyer Job[]  @relation("BuyerJobs")
-  reviews    Review[]
+enum EscrowStatus {
+  UNFUNDED
+  LOCKED
+  RELEASED
+  REFUNDED
+  DISPUTED
 }
 
-model Agent {
-  id            String      @id @default(cuid())
-  slug          String      @unique
-  title         String
-  description   String
-  category      String
-  builderId     String
-  builder       User        @relation("BuilderAgents", fields: [builderId], references: [id], onDelete: Restrict)
-  status        AgentStatus @default(draft)
-  /// Price in smallest USDC units (6 decimals), e.g. 1_000_000 = 1 USDC
-  priceMicroUsdc BigInt
-  billingType   BillingType
-  endpointUrl   String?
-  mcpMetadata   Json?
-  avgRating     Float?
-  reviewCount   Int         @default(0)
-  publishedAt   DateTime?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+model Provider {
+  provider_id    String         @id @default(cuid())
+  name           String
+  description    String?
+  status         ProviderStatus @default(REGISTERED)
+  owner_wallet   String
+  payout_wallet  String
+  api_base_url   String
+  trust_level    TrustLevel     @default(UNVERIFIED)
+  created_at     DateTime       @default(now())
+  updated_at     DateTime       @updatedAt
 
-  jobs     Job[]
-  reviews  Review[]
-  versions AgentVersion[]
+  services Service[]
 
-  @@index([status, category])
-  @@index([builderId])
+  @@index([status])
+  @@index([owner_wallet])
 }
 
-model AgentVersion {
-  id        String   @id @default(cuid())
-  agentId   String
-  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  version   Int
-  snapshot  Json
-  createdAt DateTime @default(now())
+model Service {
+  service_id      String        @id @default(cuid())
+  provider_id     String
+  provider        Provider      @relation(fields: [provider_id], references: [provider_id], onDelete: Restrict)
+  name            String
+  description     String?
+  service_type    String
+  endpoint_path   String
+  input_schema    Json?
+  output_schema   Json?
+  price_usdc      Decimal       @db.Decimal(18, 6)
+  timeout_seconds Int           @default(300)
+  status          ServiceStatus @default(REGISTERED)
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
 
-  @@unique([agentId, version])
+  jobs Job[]
+
+  @@index([provider_id, status])
 }
 
 model Job {
-  id             String    @id @default(cuid())
-  agentId        String
-  agent          Agent     @relation(fields: [agentId], references: [id], onDelete: Restrict)
-  buyerId        String
-  buyer          User      @relation("BuyerJobs", fields: [buyerId], references: [id], onDelete: Restrict)
-  status         JobStatus @default(quoted)
-  amountMicroUsdc BigInt
-  idempotencyKey String?   @unique
-  contractRef    String?
-  onchainJobId   String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  job_id          String    @id @default(cuid())
+  user_wallet     String
+  service_id      String
+  service         Service   @relation(fields: [service_id], references: [service_id], onDelete: Restrict)
+  status          JobStatus @default(CREATED)
+  input_uri       String?
+  input_hash      String?
+  output_uri      String?
+  output_hash     String?
+  created_at      DateTime  @default(now())
+  funded_at       DateTime?
+  started_at      DateTime?
+  submitted_at    DateTime?
+  accepted_at     DateTime?
+  settled_at      DateTime?
+  work_deadline   DateTime?
+  review_deadline DateTime?
+  error_message   String?
 
-  reviews     Review[]
-  usageEvents UsageEvent[]
+  escrow Escrow?
 
-  @@index([buyerId, status])
-  @@index([agentId])
+  @@index([user_wallet, status])
+  @@index([service_id])
 }
 
-model Review {
-  id        String   @id @default(cuid())
-  agentId   String
-  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  jobId     String
-  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  rating    Int
-  text      String?
-  createdAt DateTime @default(now())
+model Escrow {
+  escrow_id           String       @id @default(cuid())
+  job_id              String       @unique
+  job                 Job          @relation(fields: [job_id], references: [job_id], onDelete: Restrict)
+  chain_id            Int
+  token_address       String
+  escrow_contract     String
+  amount_usdc         Decimal      @db.Decimal(18, 6)
+  platform_fee_usdc   Decimal      @db.Decimal(18, 6)
+  provider_payout_usdc Decimal     @db.Decimal(18, 6)
+  escrow_status       EscrowStatus @default(UNFUNDED)
+  fund_tx_hash        String?
+  release_tx_hash     String?
+  refund_tx_hash      String?
+  created_at          DateTime     @default(now())
+  updated_at          DateTime     @updatedAt
 
-  @@unique([jobId, userId])
-  @@index([agentId])
-}
-
-model UsageEvent {
-  id        String   @id @default(cuid())
-  jobId     String
-  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  latencyMs Int?
-  error     String?
-  toolName  String?
-  createdAt DateTime @default(now())
-
-  @@index([jobId])
+  @@index([escrow_status])
+  @@index([job_id])
 }

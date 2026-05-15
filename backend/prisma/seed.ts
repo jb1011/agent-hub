@@ -4,29 +4,40 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
-  const buyer = await prisma.user.upsert({
-    where: { email: "demo-buyer@example.com" },
+  const provider = await prisma.provider.upsert({
+    where: { provider_id: "seed-provider-1" },
     create: {
-      email: "demo-buyer@example.com",
-      displayName: "Demo Buyer",
-      role: "user",
+      provider_id: "seed-provider-1",
+      name: "Demo Provider",
+      description: "A demo service provider for development",
+      owner_wallet: "0x0000000000000000000000000000000000000001",
+      payout_wallet: "0x0000000000000000000000000000000000000001",
+      api_base_url: "https://demo.example.com",
+      trust_level: "VERIFIED",
+      status: "ACTIVE",
     },
-    update: { displayName: "Demo Buyer" },
+    update: {},
   });
 
-  const builder = await prisma.user.upsert({
-    where: { email: "demo-builder@example.com" },
+  const service = await prisma.service.upsert({
+    where: { service_id: "seed-service-1" },
     create: {
-      email: "demo-builder@example.com",
-      displayName: "Demo Builder",
-      role: "builder",
+      service_id: "seed-service-1",
+      provider_id: provider.provider_id,
+      name: "Demo Text Processing",
+      description: "A demo text processing service",
+      service_type: "AI",
+      endpoint_path: "/process",
+      price_usdc: 1.0,
+      timeout_seconds: 60,
+      status: "ACTIVE",
     },
-    update: { displayName: "Demo Builder", role: "builder" },
+    update: {},
   });
 
-  console.log("Seeded users:", {
-    buyer: { id: buyer.id, email: buyer.email, role: buyer.role },
-    builder: { id: builder.id, email: builder.email, role: builder.role },
+  console.log("Seeded:", {
+    provider: { id: provider.provider_id, name: provider.name },
+    service: { id: service.service_id, name: service.name },
   });
 }
 

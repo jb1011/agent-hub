@@ -1,146 +1,139 @@
-import type { FastifyPluginAsync, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { serializeJob, serializeUsageEvent } from "../lib/serialize.js";
-import { conflict, forbidden, notFound, sendZodError } from "../lib/http-errors.js";
-import {
-  confirmJobPaymentBody,
-  createJobBody,
-  createUsageEventBody,
-  patchJobBody,
-} from "../validation/schemas.js";
+import { serializeJob, serializeEscrow } from "../lib/serialize.js";
+import { notFound, sendZodError, forbidden } from "../lib/http-errors.js";
 
-function paymentConfirmationOk(request: FastifyRequest, reply: import("fastify").FastifyReply): boolean {
-  const token = process.env.PAYMENT_CONFIRMATION_TOKEN;
-  if (!token) {
-    if (process.env.NODE_ENV === "production") {
-      reply.status(503).send({ error: "payment_confirmation_token_not_configured" });
-      return false;
-    }
-    return true;
-  }
-  const header = request.headers["x-payment-confirmation"];
-  if (typeof header !== "string" || header !== token) {
-    reply.status(401).send({ error: "invalid_payment_confirmation" });
-    return false;
-  }
-  return true;
+const JOB_STATUS = [
+  "CREATED", "FUNDED", "RUNNING", "SUBMITTED",
+  "ACCEPTED", "SETTLED", "FAILED", "EXPIRED", "REFUNDED", "DISPUTED",
+] as const;
+
+// Valid transitions: which statuses can move to which
+const TRANSITIONS: Record<string, string[]> = {
+  CREATED:   ["FUNDED", "EXPIRED"],
+  FUNDED:    ["RUNNING", "REFUNDED", "EXPIRED"],
+  RUNNING:   ["SUBMITTED", "FAILED", "EXPIRED"],
+  SUBMITTED: ["ACCEPTED", "DISPUTED", "EXPIRED"],
+  ACCEPTED:  ["SETTLED", "DISPUTED"],
+  SETTLED:   [],
+  FAILED:    ["REFUNDED"],
+  EXPIRED:   ["REFUNDED"],
+  REFUNDED:  [],
+  DISPUTED:  ["SETTLED", "REFUNDED"],
+};
+
+const createSchema = z.object({
+  user_wallet: z.string().min(1),
+  service_id: z.string().min(1),
+  input_uri: z.string().optional(),
+  input_hash: z.string().optional(),
+  work_deadline: z.string().datetime().optional(),
+  review_deadline: z.string().datetime().optional(),
+});
+
+const transitionSchema = z.object({
+  status: z.enum(JOB_STATUS),
+  output_uri: z.string().optional(),
+  output_hash: z.string().optional(),
+  error_message: z.string().optional(),
+});
+
+function timestampForStatus(status: string): Record<string, Date> {
+  const now = new Date();
+  const map: Record<string, Record<string, Date>> = {
+    FUNDED:    { funded_at: now },
+    RUNNING:   { started_at: now },
+    SUBMITTED: { submitted_at: now },
+    ACCEPTED:  { accepted_at: now },
+    SETTLED:   { settled_at: now },
+  };
+  return map[status] ?? {};
 }
 
-export const jobsRoutes: FastifyPluginAsync = async (app) => {
-  app.post("/api/jobs", async (request, reply) => {
-    const parsed = createJobBody.safeParse(request.body);
-    if (!parsed.success) return sendZodError(reply, parsed.error);
-
-    const { agentId, buyerId, idempotencyKey } = parsed.data;
-
-    if (idempotencyKey) {
-      const existing = await prisma.job.findUnique({ where: { idempotencyKey } });
-      if (existing) return reply.status(200).send(serializeJob(existing));
-    }
-
-    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
-    if (!agent) return notFound(reply, "agent_not_found");
-    if (agent.status !== "published") return conflict(reply, "agent_not_published");
-
-    const buyer = await prisma.user.findUnique({ where: { id: buyerId } });
-    if (!buyer) return notFound(reply, "buyer_not_found");
-
-    try {
-      const job = await prisma.job.create({
-        data: {
-          agentId,
-          buyerId,
-          status: "quoted",
-          amountMicroUsdc: agent.priceMicroUsdc,
-          idempotencyKey: idempotencyKey ?? null,
-        },
-      });
-      return reply.status(201).send(serializeJob(job));
-    } catch (e: unknown) {
-      if (typeof e === "object" && e !== null && "code" in e && (e as { code: string }).code === "P2002") {
-        const existing = await prisma.job.findUnique({ where: { idempotencyKey: idempotencyKey! } });
-        if (existing) return reply.status(200).send(serializeJob(existing));
-        return conflict(reply, "idempotency_conflict");
-      }
-      throw e;
-    }
+export async function jobsRoutes(app: FastifyInstance) {
+  app.get("/jobs", async (req, reply) => {
+    const query = z
+      .object({
+        user_wallet: z.string().optional(),
+        service_id: z.string().optional(),
+        status: z.enum(JOB_STATUS).optional(),
+      })
+      .safeParse(req.query);
+    const where = query.success
+      ? {
+          ...(query.data.user_wallet ? { user_wallet: query.data.user_wallet } : {}),
+          ...(query.data.service_id ? { service_id: query.data.service_id } : {}),
+          ...(query.data.status ? { status: query.data.status } : {}),
+        }
+      : {};
+    const jobs = await prisma.job.findMany({
+      where,
+      orderBy: { created_at: "desc" },
+    });
+    return reply.send(jobs.map(serializeJob));
   });
 
-  app.get("/api/jobs/:id", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const job = await prisma.job.findUnique({ where: { id } });
-    if (!job) return notFound(reply, "job_not_found");
-    return serializeJob(job);
-  });
-
-  app.post("/api/jobs/:id/confirm-payment", async (request, reply) => {
-    if (!paymentConfirmationOk(request, reply)) return;
-
-    const parsed = confirmJobPaymentBody.safeParse(request.body ?? {});
-    if (!parsed.success) return sendZodError(reply, parsed.error);
-
-    const { id } = request.params as { id: string };
-    const job = await prisma.job.findUnique({ where: { id } });
-    if (!job) return notFound(reply, "job_not_found");
-    if (job.status !== "quoted") return conflict(reply, "job_not_quoted");
-
-    const updated = await prisma.job.update({
-      where: { id },
-      data: {
-        status: "paid",
-        contractRef: parsed.data.contractRef ?? null,
-        onchainJobId: parsed.data.onchainJobId ?? null,
+  app.get<{ Params: { id: string } }>("/jobs/:id", async (req, reply) => {
+    const job = await prisma.job.findUnique({
+      where: { job_id: req.params.id },
+      include: { escrow: true, service: true },
+    });
+    if (!job) return notFound(reply);
+    return reply.send({
+      ...serializeJob(job),
+      escrow: job.escrow ? serializeEscrow(job.escrow) : null,
+      service: {
+        service_id: job.service.service_id,
+        name: job.service.name,
+        price_usdc: job.service.price_usdc.toString(),
       },
     });
-    return serializeJob(updated);
   });
 
-  app.patch("/api/jobs/:id", async (request, reply) => {
-    const parsed = patchJobBody.safeParse(request.body);
+  app.post("/jobs", async (req, reply) => {
+    const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
-
-    const { id } = request.params as { id: string };
-    const { buyerId } = (request.query ?? {}) as { buyerId?: string };
-    if (!buyerId) return reply.status(400).send({ error: "buyerId_query_required" });
-
-    const job = await prisma.job.findUnique({ where: { id } });
-    if (!job) return notFound(reply, "job_not_found");
-    if (job.buyerId !== buyerId) return forbidden(reply, "not_job_buyer");
-
-    const next = parsed.data.status;
-    const allowed: Record<string, string[]> = {
-      paid: ["in_progress", "cancelled"],
-      in_progress: ["completed", "failed", "cancelled"],
-    };
-    const ok = allowed[job.status]?.includes(next);
-    if (!ok) return conflict(reply, "invalid_status_transition");
-
-    const updated = await prisma.job.update({
-      where: { id },
-      data: { status: next },
+    const serviceExists = await prisma.service.findUnique({
+      where: { service_id: parsed.data.service_id },
     });
-    return serializeJob(updated);
-  });
-
-  app.post("/api/jobs/:id/usage-events", async (request, reply) => {
-    const parsed = createUsageEventBody.safeParse(request.body);
-    if (!parsed.success) return sendZodError(reply, parsed.error);
-
-    const { id } = request.params as { id: string };
-    const job = await prisma.job.findUnique({ where: { id } });
-    if (!job) return notFound(reply, "job_not_found");
-    if (job.status !== "paid" && job.status !== "in_progress") {
-      return conflict(reply, "job_not_active");
-    }
-
-    const event = await prisma.usageEvent.create({
+    if (!serviceExists) return notFound(reply, "service_not_found");
+    const job = await prisma.job.create({
       data: {
-        jobId: id,
-        latencyMs: parsed.data.latencyMs ?? null,
-        error: parsed.data.error ?? null,
-        toolName: parsed.data.toolName ?? null,
+        ...parsed.data,
+        work_deadline: parsed.data.work_deadline
+          ? new Date(parsed.data.work_deadline)
+          : undefined,
+        review_deadline: parsed.data.review_deadline
+          ? new Date(parsed.data.review_deadline)
+          : undefined,
       },
     });
-    return reply.status(201).send(serializeUsageEvent(event));
+    return reply.status(201).send(serializeJob(job));
   });
-};
+
+  app.patch<{ Params: { id: string } }>("/jobs/:id/status", async (req, reply) => {
+    const parsed = transitionSchema.safeParse(req.body);
+    if (!parsed.success) return sendZodError(reply, parsed.error);
+    const job = await prisma.job.findUnique({ where: { job_id: req.params.id } });
+    if (!job) return notFound(reply);
+    const allowed = TRANSITIONS[job.status] ?? [];
+    if (!allowed.includes(parsed.data.status)) {
+      return forbidden(
+        reply,
+        `cannot_transition_from_${job.status}_to_${parsed.data.status}`
+      );
+    }
+    const updated = await prisma.job.update({
+      where: { job_id: req.params.id },
+      data: {
+        status: parsed.data.status,
+        output_uri: parsed.data.output_uri,
+        output_hash: parsed.data.output_hash,
+        error_message: parsed.data.error_message,
+        ...timestampForStatus(parsed.data.status),
+      },
+    });
+    return reply.send(serializeJob(updated));
+  });
+}
