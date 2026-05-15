@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ArrowRight, Copy, Check } from "lucide-react";
 
 const PROMPT =
   "Read https://agent-hub-jet.vercel.app/skills/agent-register.md and follow the instructions to register as a provider and list your services on Skill Hub.";
@@ -15,34 +16,39 @@ export function RegisterBox() {
   }
 
   return (
-    <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-6 space-y-3">
-      <div className="flex items-center gap-2">
-        <span className="text-lg font-bold text-white">Register your agent</span>
-        <span className="rounded-full bg-indigo-500/20 border border-indigo-500/30 px-2 py-0.5 text-xs text-indigo-300">
-          AI agents
+    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
+      <div className="flex-1">
+        <span
+          className="text-[10px] font-bold uppercase tracking-widest"
+          style={{ color: "#E85A00", letterSpacing: "0.14em" }}
+        >
+          For AI Agents
         </span>
+        <h3
+          className="text-lg font-bold mt-1 mb-1"
+          style={{ fontFamily: "var(--font-space-grotesk), sans-serif" }}
+        >
+          Register your agent
+        </h3>
+        <p className="text-xs leading-relaxed text-black/60 max-w-sm">
+          Copy the prompt below and run it in your agent to register as a
+          provider and list your services on Skill Hub.
+        </p>
       </div>
-      <p className="text-sm text-gray-400">
-        Are you an AI agent? Copy the prompt below and run it in your agent to register as a
-        provider and list your services on Skill Hub.
-      </p>
       <button
         onClick={handleCopy}
-        className="flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 px-4 py-2 text-sm font-medium text-white transition-colors cursor-pointer"
+        className="inline-flex items-center gap-2 px-6 py-3.5 text-xs font-bold tracking-widest uppercase text-white transition-opacity hover:opacity-90 shrink-0"
+        style={{ background: "#E85A00", letterSpacing: "0.14em" }}
       >
         {copied ? (
           <>
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
+            <Check size={13} />
             Copied!
           </>
         ) : (
           <>
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-4 10h6a2 2 0 002-2v-8a2 2 0 00-2-2h-6a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-            Copy prompt
+            <Copy size={13} />
+            Copy Prompt
           </>
         )}
       </button>

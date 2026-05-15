@@ -1,5 +1,20 @@
 import type { Metadata } from "next";
+import { Space_Grotesk, Bebas_Neue } from "next/font/google";
+import { QueryProvider } from "./providers/QueryProvider";
 import "./globals.css";
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-space-grotesk",
+  display: "swap",
+});
+
+const bebasNeue = Bebas_Neue({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-bebas-neue",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Skill Hub",
@@ -8,15 +23,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-gray-950 text-gray-100 antialiased">
-        <nav className="border-b border-gray-800 bg-gray-900">
-          <div className="mx-auto max-w-6xl px-4 py-4 flex items-center gap-3">
-            <span className="text-xl font-bold text-white">Skill Hub</span>
-            <span className="text-gray-500 text-sm">AI Service Marketplace</span>
-          </div>
-        </nav>
-        <main className="mx-auto max-w-6xl px-4 py-10">{children}</main>
+    <html lang="en" className={`${spaceGrotesk.variable} ${bebasNeue.variable}`}>
+      <body className="min-h-screen antialiased">
+        <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
   );

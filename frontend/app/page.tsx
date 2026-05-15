@@ -1,166 +1,490 @@
+"use client";
+
+import {
+  ArrowRight,
+  Zap,
+  Shield,
+  Globe,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ServiceGrid } from "./components/ServiceGrid";
 import { RegisterBox } from "./components/RegisterBox";
+import NavMenu from "./components/NavMenu";
+import { fetchServices, fetchProviders, apiKeys } from "./lib/api";
 
-const API = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+const GRID = "rgba(0,0,0,0.12)";
 
-type Provider = {
-  provider_id: string;
-  name: string;
-  trust_level: string;
-};
+const features = [
+  {
+    num: "01",
+    title: "Curated Directory",
+    body: "Every agent is reviewed, tested, and categorized. No noise — only specialized agents that deliver.",
+  },
+  {
+    num: "02",
+    title: "Seamless Payments",
+    body: "Pay per call in USDC via Arc Protocol. No subscriptions, no billing overhead — pure pay-as-you-go.",
+  },
+  {
+    num: "03",
+    title: "MCP + API Ready",
+    body: "Every agent exposes a standard MCP interface and REST API. Plug into your workflow in minutes.",
+  },
+  {
+    num: "04",
+    title: "Peer Reviews",
+    body: "Verified usage-based ratings from real humans and agent pipelines. Know before you integrate.",
+  },
+];
 
-type Service = {
-  service_id: string;
-  provider_id: string;
-  name: string;
-  description: string | null;
-  service_type: string;
-  price_usdc: string;
-  status: string;
-  provider?: Provider;
-};
+const partners = ["ARC Protocol", "USDC", "Chainlink", "Polygon", "Anthropic", "OpenAI"];
 
-async function getServices(): Promise<Service[]> {
-  try {
-    const res = await fetch(`${API}/services`, { cache: "no-store" });
-    console.log(res);
-    if (!res.ok) return [];
-    return res.json();
-  } catch {
-    return [];
-  }
-}
+export default function HomePage() {
+  const { data: services = [] } = useQuery({
+    queryKey: apiKeys.services,
+    queryFn: fetchServices,
+  });
 
-async function getProviders(): Promise<Provider[]> {
-  try {
-    const res = await fetch(`${API}/providers`, { cache: "no-store" });
-    if (!res.ok) return [];
-    return res.json();
-  } catch {
-    return [];
-  }
-}
+  const { data: providers = [] } = useQuery({
+    queryKey: apiKeys.providers,
+    queryFn: fetchProviders,
+  });
 
-const trustBadge: Record<string, string> = {
-  HOSTED: "bg-purple-500/20 text-purple-300 border border-purple-500/30",
-  CERTIFIED: "bg-blue-500/20   text-blue-300   border border-blue-500/30",
-  VERIFIED: "bg-green-500/20  text-green-300  border border-green-500/30",
-  UNVERIFIED: "bg-gray-500/20   text-gray-400   border border-gray-500/30",
-};
-
-const statusDot: Record<string, string> = {
-  ACTIVE: "bg-green-400",
-  INACTIVE: "bg-yellow-400",
-  SUSPENDED: "bg-red-400",
-  REGISTERED: "bg-gray-400",
-};
-
-export default async function HomePage() {
-  const [services, providers] = await Promise.all([
-    getServices(),
-    getProviders(),
-  ]);
-
-  const providerMap = Object.fromEntries(
-    providers.map((p) => [p.provider_id, p]),
-  );
+  const liveStats = [
+    { label: "Agents", value: services.length > 0 ? `${services.length}` : "—" },
+    { label: "Providers", value: providers.length > 0 ? `${providers.length}` : "—" },
+    { label: "Avg Rating", value: "4.7★" },
+  ];
 
   return (
-    <div className="space-y-10">
-      {/* Hero */}
-      <div className="space-y-2">
-        <h1 className="text-3xl font-bold text-white">Services</h1>
-        <p className="text-gray-400">
-          {services.length} service{services.length !== 1 ? "s" : ""} available
-        </p>
+    <div
+      className="min-h-screen w-full overflow-x-hidden"
+      style={{
+        background: "#E8E8E4",
+        fontFamily: "var(--font-space-grotesk), 'Space Grotesk', sans-serif",
+        borderLeft: `1px solid ${GRID}`,
+        borderRight: `1px solid ${GRID}`,
+      }}
+    >
+      {/* ── NAV ── */}
+      <NavMenu />
+
+      {/* ── HERO ── */}
+      <section
+        className="relative overflow-hidden"
+        style={{ borderBottom: `1px solid ${GRID}` }}
+      >
+        {/* Vertical grid lines */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)" }}
+        >
+          {[...Array(5)].map((_, i) => (
+            <div key={i} style={{ gridColumn: i + 2, borderLeft: `1px solid ${GRID}` }} />
+          ))}
+        </div>
+
+        <div
+          className="absolute left-0 right-0"
+          style={{ top: "60%", borderTop: `1px solid ${GRID}` }}
+        />
+
+        <div className="relative flex flex-col md:flex-row">
+          {/* Left: description + CTA */}
+          <div
+            className="flex flex-col justify-end px-6 md:px-10 pb-8 pt-16 md:pt-0 md:w-[30%] shrink-0"
+            style={{ borderRight: `1px solid ${GRID}` }}
+          >
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-2 h-2" style={{ background: "#E85A00" }} />
+                <span className="text-xs font-semibold tracking-widest uppercase text-black/50">
+                  Agent Marketplace
+                </span>
+              </div>
+              <p className="text-sm leading-relaxed text-black/70 max-w-xs">
+                Discover, evaluate, and integrate specialized AI agents into any
+                workflow. Powered by MCP, USDC payments, and peer reviews.
+              </p>
+            </div>
+            <a
+              href="#directory"
+              className="inline-flex items-center gap-2 px-5 py-3 text-xs font-bold tracking-widest uppercase text-white w-fit transition-opacity hover:opacity-90"
+              style={{ background: "#E85A00", letterSpacing: "0.14em" }}
+            >
+              Browse Agents
+              <ArrowRight size={13} />
+            </a>
+          </div>
+
+          {/* Center: headline */}
+          <div className="flex-1 flex flex-col justify-center px-4 md:px-8 py-8 md:py-16 overflow-hidden">
+            <h1
+              className="leading-none uppercase text-black select-none"
+              style={{
+                fontFamily: "var(--font-bebas-neue), sans-serif",
+                fontSize: "clamp(64px, 11vw, 160px)",
+                letterSpacing: "-0.01em",
+                lineHeight: 0.92,
+              }}
+            >
+              DISCOVER
+              <br />
+              AI AGENTS
+            </h1>
+          </div>
+
+          {/* Right: live stats */}
+          <div
+            className="hidden md:flex flex-col justify-between w-[18%] shrink-0 py-8 px-5"
+            style={{ borderLeft: `1px solid ${GRID}` }}
+          >
+            <div>
+              <div className="text-xs font-semibold tracking-widest uppercase text-black/40 mb-3">
+                Live Stats
+              </div>
+              <div className="space-y-4">
+                {liveStats.map((s) => (
+                  <div
+                    key={s.label}
+                    style={{ borderBottom: `1px solid ${GRID}`, paddingBottom: "12px" }}
+                  >
+                    <div className="text-[10px] uppercase tracking-widest text-black/40">
+                      {s.label}
+                    </div>
+                    <div
+                      className="text-2xl font-bold mt-0.5"
+                      style={{
+                        fontFamily: "var(--font-bebas-neue), sans-serif",
+                        color: "#0C0C0C",
+                      }}
+                    >
+                      {s.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="text-[10px] uppercase tracking-widest text-black/30">
+              Updated live
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── SECTION LABEL ── */}
+      <div
+        className="flex items-center gap-3 px-6 md:px-10 py-4"
+        style={{ borderBottom: `1px solid ${GRID}` }}
+      >
+        <div className="w-2 h-2" style={{ background: "#E85A00" }} />
+        <span className="text-xs font-semibold tracking-widest uppercase text-black/50">
+          Featured Agents
+        </span>
+        <div className="flex-1" />
+        <div className="flex items-center gap-1.5 text-xs text-black/40">
+          <Search size={11} />
+          <span className="hidden sm:inline">Search agents...</span>
+        </div>
       </div>
 
-      {/* Providers strip */}
-      {providers.length > 0 && (
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-3">
-            Providers
-          </h2>
-          <div className="flex flex-wrap gap-3">
-            {providers.map((p) => (
+      {/* ── SERVICE GRID ── */}
+      <div id="directory">
+        <ServiceGrid />
+      </div>
+
+      {/* ── HOW IT WORKS ── */}
+      <section style={{ borderBottom: `1px solid ${GRID}` }}>
+        <div
+          className="flex items-center gap-3 px-6 md:px-10 py-4"
+          style={{ borderBottom: `1px solid ${GRID}` }}
+        >
+          <div className="w-2 h-2" style={{ background: "#E85A00" }} />
+          <span className="text-xs font-semibold tracking-widest uppercase text-black/50">
+            How It Works
+          </span>
+          <div className="flex-1" />
+          <div
+            className="hidden md:block"
+            style={{
+              fontFamily: "var(--font-bebas-neue), sans-serif",
+              fontSize: "clamp(28px, 4vw, 52px)",
+              color: "#0C0C0C",
+              lineHeight: 1,
+              letterSpacing: "0.02em",
+            }}
+          >
+            Smart Capital for AI Agents
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          {features.map((f, i) => (
+            <div
+              key={f.num}
+              className="p-7 flex flex-col gap-6"
+              style={{
+                borderRight: i < features.length - 1 ? `1px solid ${GRID}` : undefined,
+                borderBottom: `1px solid ${GRID}`,
+              }}
+            >
               <div
-                key={p.provider_id}
-                className="flex items-center gap-2 rounded-lg border border-gray-800 bg-gray-900 px-4 py-2"
+                className="text-4xl font-bold text-black/10"
+                style={{ fontFamily: "var(--font-bebas-neue), sans-serif" }}
               >
-                <span className="text-sm font-medium text-white">{p.name}</span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${trustBadge[p.trust_level] ?? trustBadge.UNVERIFIED}`}
+                {f.num}
+              </div>
+              <div>
+                <h4 className="font-bold mb-2 text-base">{f.title}</h4>
+                <p className="text-xs leading-relaxed text-black/60">{f.body}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── ECOSYSTEM ── */}
+      <section style={{ borderBottom: `1px solid ${GRID}` }}>
+        <div className="relative flex flex-col md:flex-row">
+          <div
+            className="md:w-1/3 px-6 md:px-10 py-10 flex flex-col justify-center"
+            style={{ borderRight: `1px solid ${GRID}` }}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-2 h-2" style={{ background: "#E85A00" }} />
+              <span className="text-xs font-semibold tracking-widest uppercase text-black/50">
+                Ecosystem
+              </span>
+            </div>
+            <h2
+              className="uppercase mb-4"
+              style={{
+                fontFamily: "var(--font-bebas-neue), sans-serif",
+                fontSize: "clamp(36px, 5vw, 72px)",
+                lineHeight: 0.95,
+                color: "#0C0C0C",
+              }}
+            >
+              Built For Every Workflow
+            </h2>
+            <p className="text-sm text-black/60 leading-relaxed max-w-xs">
+              Whether you are a solo developer, an enterprise team, or an AI
+              agent orchestrating other agents — Skill Hub fits your stack.
+            </p>
+          </div>
+
+          <div className="flex-1 grid grid-cols-1 sm:grid-cols-3">
+            {[
+              {
+                icon: <Globe size={20} />,
+                label: "MCP Native",
+                desc: "Every agent ships a compliant MCP interface for agent-to-agent calling.",
+              },
+              {
+                icon: <Shield size={20} />,
+                label: "Verified Agents",
+                desc: "Multi-step review process. Performance benchmarks, security checks, uptime SLAs.",
+              },
+              {
+                icon: <Zap size={20} />,
+                label: "USDC Payments",
+                desc: "Arc-powered micropayments in USDC. Pay per call with no minimums.",
+              },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="p-7 flex flex-col gap-4"
+                style={{ borderLeft: `1px solid ${GRID}`, borderBottom: `1px solid ${GRID}` }}
+              >
+                <div
+                  className="w-9 h-9 flex items-center justify-center text-white"
+                  style={{ background: "#0C0C0C" }}
                 >
-                  {p.trust_level}
-                </span>
+                  {item.icon}
+                </div>
+                <div>
+                  <div className="font-bold mb-1.5 text-sm">{item.label}</div>
+                  <p className="text-xs leading-relaxed text-black/60">{item.desc}</p>
+                </div>
               </div>
             ))}
           </div>
         </div>
-      )}
+      </section>
 
-      {/* Register box */}
-      <RegisterBox />
-
-      {/* Services grid */}
-      {services.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-700 p-12 text-center text-gray-500">
-          No services found. Make sure the backend is running at{" "}
-          <code className="text-gray-400">{API}</code>.
+      {/* ── PARTNERS ── */}
+      <section
+        className="flex flex-col sm:flex-row items-center"
+        style={{ borderBottom: `1px solid ${GRID}` }}
+      >
+        <div
+          className="px-6 md:px-10 py-5 shrink-0 w-full sm:w-auto"
+          style={{ borderRight: `1px solid ${GRID}` }}
+        >
+          <span className="text-[10px] font-bold uppercase tracking-widest text-black/40">
+            Our Partners:
+          </span>
         </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {services.map((s) => {
-            const provider = providerMap[s.provider_id];
-            return (
+        <div className="flex items-center overflow-x-auto flex-1">
+          {partners.map((p, i) => (
+            <div
+              key={p}
+              className="shrink-0 px-6 md:px-10 py-5 text-xs font-bold uppercase tracking-widest text-black/40 hover:text-black/70 transition-colors cursor-pointer"
+              style={{ borderRight: i < partners.length - 1 ? `1px solid ${GRID}` : undefined }}
+            >
+              {p}
+            </div>
+          ))}
+        </div>
+        <div
+          className="hidden md:flex items-center"
+          style={{ borderLeft: `1px solid ${GRID}` }}
+        >
+          <button
+            className="px-4 py-5 hover:bg-black/5 transition-colors"
+            style={{ borderRight: `1px solid ${GRID}` }}
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button className="px-4 py-5 hover:bg-black/5 transition-colors">
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      </section>
+
+      {/* ── CTA BANNER ── */}
+      <section
+        className="relative overflow-hidden flex flex-col md:flex-row items-stretch"
+        style={{ borderBottom: `1px solid ${GRID}` }}
+      >
+        <div
+          className="flex-1 px-6 md:px-10 py-12 md:py-16"
+          style={{ background: "#0C0C0C" }}
+        >
+          <div className="flex items-center gap-2 mb-6">
+            <div className="w-2 h-2" style={{ background: "#E85A00" }} />
+            <span className="text-xs font-semibold tracking-widest uppercase text-white/40">
+              Join the network
+            </span>
+          </div>
+          <h2
+            className="uppercase text-white mb-6"
+            style={{
+              fontFamily: "var(--font-bebas-neue), sans-serif",
+              fontSize: "clamp(40px, 6vw, 88px)",
+              lineHeight: 0.95,
+              letterSpacing: "-0.01em",
+            }}
+          >
+            Monetize Your Agent. Reach Thousands.
+          </h2>
+          <p className="text-sm text-white/50 leading-relaxed max-w-md mb-8">
+            List your specialized AI agent on Skill Hub. Earn USDC on every API
+            call. No revenue share, no lock-in — just access to a growing
+            ecosystem of builders and agents.
+          </p>
+
+          <div
+            className="border p-6 mb-8 max-w-lg"
+            style={{
+              borderColor: "rgba(232,90,0,0.3)",
+              background: "rgba(232,90,0,0.05)",
+            }}
+          >
+            <RegisterBox />
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <a
+              href="#"
+              className="inline-flex items-center gap-2 px-6 py-3.5 text-xs font-bold tracking-widest uppercase text-white transition-opacity hover:opacity-90"
+              style={{ background: "#E85A00", letterSpacing: "0.14em" }}
+            >
+              List Your Agent <ArrowRight size={13} />
+            </a>
+            <a
+              href="#"
+              className="inline-flex items-center gap-2 px-6 py-3.5 text-xs font-bold tracking-widest uppercase transition-colors"
+              style={{
+                border: `1px solid rgba(255,255,255,0.2)`,
+                color: "rgba(255,255,255,0.6)",
+                letterSpacing: "0.14em",
+              }}
+            >
+              Read Docs
+            </a>
+          </div>
+        </div>
+
+        {/* Right stat block */}
+        <div
+          className="hidden md:flex flex-col items-center justify-center w-72 shrink-0 gap-6 px-10"
+          style={{ background: "#141414", borderLeft: `1px solid rgba(255,255,255,0.07)` }}
+        >
+          {[
+            { value: services.length > 0 ? `${services.length}+` : "—", label: "Active Agents" },
+            { value: "$0", label: "Listing Fee" },
+            { value: "USDC", label: "Instant Payouts", orange: true },
+          ].map((item, i) => (
+            <div key={item.label} className="text-center w-full">
+              {i > 0 && (
+                <div
+                  className="w-full mb-6"
+                  style={{ borderTop: `1px solid rgba(255,255,255,0.07)` }}
+                />
+              )}
               <div
-                key={s.service_id}
-                className="flex flex-col justify-between rounded-xl border border-gray-800 bg-gray-900 p-6 hover:border-gray-600 transition-colors"
+                className="text-5xl font-bold mb-1"
+                style={{
+                  fontFamily: "var(--font-bebas-neue), sans-serif",
+                  color: item.orange ? "#E85A00" : "#fff",
+                }}
               >
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-semibold text-white leading-tight">
-                      {s.name}
-                    </h3>
-                    <span className="flex items-center gap-1.5 shrink-0">
-                      <span
-                        className={`h-2 w-2 rounded-full ${statusDot[s.status] ?? "bg-gray-400"}`}
-                      />
-                      <span className="text-xs text-gray-500">{s.status}</span>
-                    </span>
-                  </div>
-
-                  {s.description && (
-                    <p className="text-sm text-gray-400 line-clamp-2">
-                      {s.description}
-                    </p>
-                  )}
-
-                  <span className="inline-block rounded-md bg-gray-800 px-2 py-0.5 text-xs text-gray-300">
-                    {s.service_type}
-                  </span>
-                </div>
-
-                <div className="mt-5 flex items-center justify-between border-t border-gray-800 pt-4">
-                  <div>
-                    {provider && (
-                      <p className="text-xs text-gray-500">{provider.name}</p>
-                    )}
-                    <p className="text-xs text-gray-600 font-mono">
-                      {s.service_id}
-                    </p>
-                  </div>
-                  <span className="text-lg font-bold text-white">
-                    ${s.price_usdc}
-                    <span className="text-xs font-normal text-gray-400 ml-1">
-                      USDC
-                    </span>
-                  </span>
-                </div>
+                {item.value}
               </div>
-            );
-          })}
+              <div className="text-[10px] uppercase tracking-widest text-white/30">
+                {item.label}
+              </div>
+            </div>
+          ))}
         </div>
-      )}
+      </section>
+
+      {/* ── FOOTER ── */}
+      <footer
+        className="flex flex-col md:flex-row items-start md:items-center justify-between px-6 md:px-10 py-6 gap-4"
+        style={{ borderBottom: `1px solid ${GRID}` }}
+      >
+        <div className="flex items-center gap-2">
+          <div
+            className="w-5 h-5 flex items-center justify-center"
+            style={{ background: "#E85A00" }}
+          >
+            <Zap size={10} className="text-white fill-white" />
+          </div>
+          <span
+            className="text-xs font-semibold tracking-widest uppercase"
+            style={{ letterSpacing: "0.18em" }}
+          >
+            SkillHub
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-6 text-[10px] uppercase tracking-widest font-medium text-black/40">
+          {["Privacy", "Terms", "Docs", "Status", "GitHub"].map((link) => (
+            <a key={link} href="#" className="hover:text-black transition-colors">
+              {link}
+            </a>
+          ))}
+        </div>
+
+        <div className="text-[10px] text-black/30 uppercase tracking-widest">
+          © 2026 SkillHub
+        </div>
+      </footer>
     </div>
   );
 }

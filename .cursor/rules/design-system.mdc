@@ -1,0 +1,114 @@
+---
+description: Design system for Skill Hub — inspired by ChainGPT Labs. Defines the color palette, typography, component patterns, and layout conventions to use across all frontend files.
+globs: frontend/**/*.{tsx,ts,css}
+alwaysApply: false
+---
+
+# Skill Hub Design System
+
+Inspired by ChainGPT Labs: dark-first, minimal, tech-forward with a vibrant orange accent.
+
+## Color Palette
+
+Use these Tailwind classes or CSS variables — never hardcode raw hex values:
+
+| Token | CSS var | Tailwind approx | Hex |
+|-------|---------|-----------------|-----|
+| Background primary | `--bg-primary` | `bg-[#0a0a0a]` | `#0a0a0a` |
+| Background surface | `--bg-surface` | `bg-[#111111]` | `#111111` |
+| Background card | `--bg-card` | `bg-[#161616]` | `#161616` |
+| Border default | `--border` | `border-[#2a2a2a]` | `#2a2a2a` |
+| Border subtle | `--border-subtle` | `border-[#1e1e1e]` | `#1e1e1e` |
+| Text primary | `--text-primary` | `text-white` | `#ffffff` |
+| Text secondary | `--text-secondary` | `text-[#a0a0a0]` | `#a0a0a0` |
+| Text muted | `--text-muted` | `text-[#555555]` | `#555555` |
+| **Accent orange** | `--accent` | `text-[#f47645]` | `#f47645` |
+| Accent orange bg | `--accent-bg` | `bg-[#f47645]` | `#f47645` |
+| Accent orange subtle | `--accent-subtle` | `bg-[#f47645]/10` | `#f4764519` |
+| Accent orange border | `--accent-border` | `border-[#f47645]/30` | `#f4764550` |
+| Green (ACTIVE) | — | `text-[#4ade80]` | `#4ade80` |
+| Yellow (INACTIVE) | — | `text-[#facc15]` | `#facc15` |
+| Red (SUSPENDED) | — | `text-[#f87171]` | `#f87171` |
+
+## Typography
+
+- **Hero headings**: `text-3xl md:text-5xl font-black tracking-tight text-white`
+- **Section labels**: `text-xs font-bold uppercase tracking-widest text-[#f47645]`
+- **Card titles**: `text-base font-semibold text-white`
+- **Body / descriptions**: `text-sm text-[#a0a0a0]`
+- **Monospace / IDs**: `font-mono text-xs text-[#555555]`
+- **Price / highlight numbers**: `text-lg font-black text-white`
+
+## Cards
+
+```tsx
+// Standard card
+<div className="rounded-xl border border-[#2a2a2a] bg-[#161616] p-6 hover:border-[#f47645]/40 transition-colors">
+```
+
+```tsx
+// Accent / featured card (e.g. RegisterBox)
+<div className="rounded-xl border border-[#f47645]/30 bg-[#f47645]/5 p-6">
+```
+
+## Background Grid
+
+The full-page grid is defined in `globals.css` — do not override it on individual components:
+
+```css
+/* subtle square grid matching ChainGPT Labs */
+background-image:
+  linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+background-size: 40px 40px;
+background-attachment: fixed;
+```
+
+## Buttons
+
+Primary buttons use **black text on orange** (exact ChainGPT Labs style):
+
+Chamfered-corner (45° cut) outline button — defined via `clip-chamfer` utility in `globals.css`.
+Use a two-layer pattern: outer `div` provides the border color, inner `button` provides the dark fill.
+
+```tsx
+// Chamfered outline button
+<div className="clip-chamfer bg-white/30 p-px w-fit hover:bg-white/60 transition-colors">
+  <button className="clip-chamfer bg-[#0a0a0a] px-8 py-3 text-sm font-bold text-white uppercase tracking-widest">
+    ACTION
+  </button>
+</div>
+```
+
+For an orange-accented variant swap `bg-white/30` → `bg-[#f47645]/50` and `bg-white/60` → `bg-[#f47645]/80`.
+
+## Badges / Pills
+
+```tsx
+// Trust / status badge
+<span className="rounded-full border border-[#f47645]/30 bg-[#f47645]/10 px-2 py-0.5 text-xs font-semibold text-[#f47645]">
+```
+
+## Navigation
+
+- Height `py-4`, sticky top, `border-b border-[#1e1e1e] bg-[#0a0a0a]/95 backdrop-blur`
+- Logo: `font-black text-white` with orange dot or accent mark
+- Links: `text-sm text-[#a0a0a0] hover:text-white transition-colors`
+
+## Layout
+
+- Max content width: `max-w-6xl mx-auto px-4`
+- Section gap: `space-y-12` or `gap-12`
+- Card grid: `grid gap-4 sm:grid-cols-2 lg:grid-cols-3`
+- Section labels precede every major group with the accent label pattern above
+
+## Do / Don't
+
+✅ Use `#f47645` as the sole accent color — replace indigo/purple/blue with orange  
+✅ Keep backgrounds very dark (`#0a0a0a` → `#161616` surface stack)  
+✅ Use generous whitespace — avoid cramped layouts  
+✅ Uppercase, bold, wide-tracked labels for section headers  
+✅ Subtle border glow `border-[#f47645]/40` on hover states  
+❌ Don't use `bg-gray-900` / `bg-gray-950` — use the explicit hex tokens above  
+❌ Don't use `indigo-`, `blue-`, or `purple-` for primary UI elements  
+❌ Don't mix multiple accent colors — orange only  
