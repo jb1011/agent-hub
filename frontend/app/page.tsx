@@ -20,6 +20,7 @@ type Service = {
 async function getServices(): Promise<Service[]> {
   try {
     const res = await fetch(`${API}/services`, { cache: "no-store" });
+    console.log(res);
     if (!res.ok) return [];
     return res.json();
   } catch {
@@ -38,23 +39,28 @@ async function getProviders(): Promise<Provider[]> {
 }
 
 const trustBadge: Record<string, string> = {
-  HOSTED:     "bg-purple-500/20 text-purple-300 border border-purple-500/30",
-  CERTIFIED:  "bg-blue-500/20   text-blue-300   border border-blue-500/30",
-  VERIFIED:   "bg-green-500/20  text-green-300  border border-green-500/30",
+  HOSTED: "bg-purple-500/20 text-purple-300 border border-purple-500/30",
+  CERTIFIED: "bg-blue-500/20   text-blue-300   border border-blue-500/30",
+  VERIFIED: "bg-green-500/20  text-green-300  border border-green-500/30",
   UNVERIFIED: "bg-gray-500/20   text-gray-400   border border-gray-500/30",
 };
 
 const statusDot: Record<string, string> = {
-  ACTIVE:     "bg-green-400",
-  INACTIVE:   "bg-yellow-400",
-  SUSPENDED:  "bg-red-400",
+  ACTIVE: "bg-green-400",
+  INACTIVE: "bg-yellow-400",
+  SUSPENDED: "bg-red-400",
   REGISTERED: "bg-gray-400",
 };
 
 export default async function HomePage() {
-  const [services, providers] = await Promise.all([getServices(), getProviders()]);
+  const [services, providers] = await Promise.all([
+    getServices(),
+    getProviders(),
+  ]);
 
-  const providerMap = Object.fromEntries(providers.map((p) => [p.provider_id, p]));
+  const providerMap = Object.fromEntries(
+    providers.map((p) => [p.provider_id, p]),
+  );
 
   return (
     <div className="space-y-10">
@@ -107,7 +113,9 @@ export default async function HomePage() {
               >
                 <div className="space-y-3">
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-semibold text-white leading-tight">{s.name}</h3>
+                    <h3 className="font-semibold text-white leading-tight">
+                      {s.name}
+                    </h3>
                     <span className="flex items-center gap-1.5 shrink-0">
                       <span
                         className={`h-2 w-2 rounded-full ${statusDot[s.status] ?? "bg-gray-400"}`}
@@ -117,7 +125,9 @@ export default async function HomePage() {
                   </div>
 
                   {s.description && (
-                    <p className="text-sm text-gray-400 line-clamp-2">{s.description}</p>
+                    <p className="text-sm text-gray-400 line-clamp-2">
+                      {s.description}
+                    </p>
                   )}
 
                   <span className="inline-block rounded-md bg-gray-800 px-2 py-0.5 text-xs text-gray-300">
@@ -130,11 +140,15 @@ export default async function HomePage() {
                     {provider && (
                       <p className="text-xs text-gray-500">{provider.name}</p>
                     )}
-                    <p className="text-xs text-gray-600 font-mono">{s.service_id}</p>
+                    <p className="text-xs text-gray-600 font-mono">
+                      {s.service_id}
+                    </p>
                   </div>
                   <span className="text-lg font-bold text-white">
                     ${s.price_usdc}
-                    <span className="text-xs font-normal text-gray-400 ml-1">USDC</span>
+                    <span className="text-xs font-normal text-gray-400 ml-1">
+                      USDC
+                    </span>
                   </span>
                 </div>
               </div>
