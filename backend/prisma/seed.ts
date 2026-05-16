@@ -5,9 +5,9 @@ const prisma = new PrismaClient();
 
 async function main() {
   const provider = await prisma.provider.upsert({
-    where: { provider_id: "seed-provider-1" },
+    where: { provider_id: "1" },
     create: {
-      provider_id: "seed-provider-1",
+      provider_id: "1",
       name: "Demo Provider",
       description: "A demo service provider for development",
       owner_wallet: "0x0000000000000000000000000000000000000001",
@@ -20,9 +20,9 @@ async function main() {
   });
 
   const service = await prisma.service.upsert({
-    where: { service_id: "seed-service-1" },
+    where: { service_id: "1" },
     create: {
-      service_id: "seed-service-1",
+      service_id: "1",
       provider_id: provider.provider_id,
       name: "Demo Text Processing",
       description: "A demo text processing service",

@@ -1,0 +1,269 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Skill Hub API",
+    "description": "Collection Fastify backend (providers, services, jobs, escrows). Importez puis définissez la variable `baseUrl` si besoin.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "providerId", "value": "1" },
+    { "key": "serviceId", "value": "1" },
+    { "key": "jobId", "value": "" },
+    { "key": "escrowId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "Réponse: { \"ok\": true }"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Providers",
+      "item": [
+        {
+          "name": "List providers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/providers"
+          }
+        },
+        {
+          "name": "Get provider",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/providers/{{providerId}}",
+            "description": "Renseignez `providerId` dans les variables de collection."
+          }
+        },
+        {
+          "name": "Create provider",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_id\": \"{{providerId}}\",\n  \"name\": \"Demo Provider\",\n  \"description\": \"Optional description\",\n  \"owner_wallet\": \"0x0000000000000000000000000000000000000001\",\n  \"payout_wallet\": \"0x0000000000000000000000000000000000000002\",\n  \"api_base_url\": \"https://api.example.com\",\n  \"trust_level\": \"VERIFIED\",\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": "{{baseUrl}}/providers"
+          }
+        },
+        {
+          "name": "Update provider",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated name\",\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": "{{baseUrl}}/providers/{{providerId}}"
+          }
+        },
+        {
+          "name": "Delete provider",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/providers/{{providerId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Services",
+      "item": [
+        {
+          "name": "List services",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/services",
+            "description": "Query optionnels: ?provider_id=&status= (ex. ACTIVE)"
+          }
+        },
+        {
+          "name": "Get service",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/services/{{serviceId}}"
+          }
+        },
+        {
+          "name": "Create service",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"service_id\": \"{{serviceId}}\",\n  \"provider_id\": \"{{providerId}}\",\n  \"name\": \"Text API\",\n  \"description\": \"Optional\",\n  \"service_type\": \"AI\",\n  \"endpoint_path\": \"/v1/process\",\n  \"input_schema\": { \"type\": \"object\" },\n  \"output_schema\": { \"type\": \"object\" },\n  \"price_usdc\": 1.5,\n  \"timeout_seconds\": 300,\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": "{{baseUrl}}/services",
+            "description": "Renseignez `providerId` (id retourné par Create provider)."
+          }
+        },
+        {
+          "name": "Update service",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Renamed service\",\n  \"price_usdc\": 2.0\n}"
+            },
+            "url": "{{baseUrl}}/services/{{serviceId}}"
+          }
+        },
+        {
+          "name": "Delete service",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/services/{{serviceId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Jobs",
+      "item": [
+        {
+          "name": "List jobs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/jobs",
+            "description": "Query optionnels: ?user_wallet=&service_id=&status= (statut enum job)"
+          }
+        },
+        {
+          "name": "Get job",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/jobs/{{jobId}}"
+          }
+        },
+        {
+          "name": "Create job",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_wallet\": \"0x00000000000000000000000000000000000000aa\",\n  \"service_id\": \"{{serviceId}}\",\n  \"input_uri\": \"ipfs://…\",\n  \"input_hash\": \"0x…\",\n  \"work_deadline\": \"2026-12-31T23:59:59.000Z\",\n  \"review_deadline\": \"2027-01-07T23:59:59.000Z\"\n}"
+            },
+            "url": "{{baseUrl}}/jobs"
+          }
+        },
+        {
+          "name": "Patch job status",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"FUNDED\",\n  \"output_uri\": null,\n  \"output_hash\": null,\n  \"error_message\": null\n}"
+            },
+            "url": "{{baseUrl}}/jobs/{{jobId}}/status",
+            "description": "Adaptez `status` selon les transitions autorisées (CREATED→FUNDED, etc.)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Escrows",
+      "item": [
+        {
+          "name": "Get escrow by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/escrows/{{escrowId}}"
+          }
+        },
+        {
+          "name": "Get escrow by job",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/jobs/{{jobId}}/escrow"
+          }
+        },
+        {
+          "name": "Create escrow",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_id\": \"{{jobId}}\",\n  \"chain_id\": 1,\n  \"token_address\": \"0x0000000000000000000000000000000000000000\",\n  \"escrow_contract\": \"0x0000000000000000000000000000000000000000\",\n  \"amount_usdc\": 10,\n  \"platform_fee_usdc\": 0.5,\n  \"provider_payout_usdc\": 9.5\n}"
+            },
+            "url": "{{baseUrl}}/escrows"
+          }
+        },
+        {
+          "name": "Fund escrow",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fund_tx_hash\": \"0xabc…\"\n}"
+            },
+            "url": "{{baseUrl}}/escrows/{{escrowId}}/fund"
+          }
+        },
+        {
+          "name": "Release escrow",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"release_tx_hash\": \"0xdef…\"\n}"
+            },
+            "url": "{{baseUrl}}/escrows/{{escrowId}}/release"
+          }
+        },
+        {
+          "name": "Refund escrow",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refund_tx_hash\": \"0x789…\"\n}"
+            },
+            "url": "{{baseUrl}}/escrows/{{escrowId}}/refund"
+          }
+        },
+        {
+          "name": "Dispute escrow",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{baseUrl}}/escrows/{{escrowId}}/dispute",
+            "description": "Corps ignoré par l’API ; champ présent pour Postman."
+          }
+        }
+      ]
+    }
+  ]
+}
