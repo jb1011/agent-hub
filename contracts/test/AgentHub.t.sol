@@ -61,12 +61,14 @@ contract AgentHubTest is Test {
     uint256 private constant PROVIDER_OWNER_PK = 0xB0B;
     uint256 private constant PROVIDER_SIGNER_PK = 0x519;
     uint256 private constant ATTESTER_PK = 0xA77E57;
+    uint256 private constant NEW_ATTESTER_PK = 0xA77E58;
     bytes32 private constant REQUEST_ID = keccak256("request-id");
 
     address private user = vm.addr(USER_PK);
     address private providerOwner = vm.addr(PROVIDER_OWNER_PK);
     address private providerSigner = vm.addr(PROVIDER_SIGNER_PK);
     address private attester = vm.addr(ATTESTER_PK);
+    address private newAttester = vm.addr(NEW_ATTESTER_PK);
     address private providerPayout = address(0xCAFE);
     address private treasury = address(0xFEE);
 
@@ -109,13 +111,19 @@ contract AgentHubTest is Test {
         assertEq(job.protocolFee, 25e6);
         assertEq(job.providerPayoutWallet, providerPayout);
         assertEq(job.treasury, treasury);
+        assertEq(job.deliveryAttester, attester);
         assertEq(job.queueDeadline, createdAt + QUEUE_TIMEOUT);
+        assertEq(job.startedAt, 0);
         assertEq(job.workTimeout, WORK_TIMEOUT);
         assertEq(job.workDeadline, 0);
         assertEq(job.reviewTimeout, REVIEW_TIMEOUT);
         assertEq(job.finalRefundDeadline, 0);
+        assertEq(job.deliveredAt, 0);
+        assertEq(job.settledAt, 0);
+        assertEq(job.refundedAt, 0);
         assertEq(job.requestId, REQUEST_ID);
         assertEq(job.inputCommitment, keccak256("input"));
+        assertEq(job.outputCommitment, bytes32(0));
         assertEq(usdc.balanceOf(user), 9_000e6);
         assertEq(usdc.balanceOf(address(escrow)), 1_000e6);
     }
@@ -124,10 +132,11 @@ contract AgentHubTest is Test {
         uint256 jobId = _createJob();
         uint256 startedAt = block.timestamp;
 
-        _startJob(jobId, block.timestamp + 1 hours, 0);
+        _startJob(jobId, block.timestamp + 1 hours);
 
         AgentHubEscrow.Job memory job = escrow.getJob(jobId);
         assertEq(uint8(job.status), uint8(AgentHubEscrow.JobStatus.RUNNING));
+        assertEq(job.startedAt, startedAt);
         assertEq(job.workDeadline, startedAt + WORK_TIMEOUT);
         assertEq(job.finalRefundDeadline, startedAt + WORK_TIMEOUT + REVIEW_TIMEOUT + REFUND_GRACE_PERIOD);
     }
@@ -136,43 +145,42 @@ contract AgentHubTest is Test {
         uint256 jobId = _createJob();
         AgentHubEscrow.Job memory job = escrow.getJob(jobId);
         uint256 expiresAt = job.queueDeadline + 1 hours;
-        bytes memory signature = _signStartJob(PROVIDER_SIGNER_PK, jobId, expiresAt, 0);
+        bytes memory signature = _signStartJob(PROVIDER_SIGNER_PK, jobId, expiresAt);
 
         vm.warp(job.queueDeadline + 1);
         vm.expectRevert(AgentHubEscrow.QueueDeadlineExceeded.selector);
-        escrow.startJob(jobId, expiresAt, 0, signature);
+        escrow.startJob(jobId, expiresAt, signature);
     }
 
     function test_StartJobRevertsWithWrongSignature() public {
         uint256 jobId = _createJob();
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signStartJob(PROVIDER_OWNER_PK, jobId, expiresAt, 0);
+        bytes memory signature = _signStartJob(PROVIDER_OWNER_PK, jobId, expiresAt);
 
         vm.expectRevert(AgentHubEscrow.InvalidSignature.selector);
-        escrow.startJob(jobId, expiresAt, 0, signature);
+        escrow.startJob(jobId, expiresAt, signature);
     }
 
-    function test_StartJobRevertsWhenNonceIsNotNextNonce() public {
-        uint256 firstJobId = _createJob();
-        _startJob(firstJobId, block.timestamp + 1 hours, 0);
-
-        uint256 secondJobId = _createJob();
+    function test_StartJobReplayRevertsWhenJobIsNoLongerQueued() public {
+        uint256 jobId = _createJob();
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signStartJob(PROVIDER_SIGNER_PK, secondJobId, expiresAt, 0);
+        bytes memory signature = _signStartJob(PROVIDER_SIGNER_PK, jobId, expiresAt);
 
-        vm.expectRevert(AgentHubEscrow.InvalidNonce.selector);
-        escrow.startJob(secondJobId, expiresAt, 0, signature);
+        escrow.startJob(jobId, expiresAt, signature);
+
+        vm.expectRevert(AgentHubEscrow.JobNotQueued.selector);
+        escrow.startJob(jobId, expiresAt, signature);
     }
 
     function test_StartJobRevertsWhenProviderWasDisabledAfterFunding() public {
         uint256 jobId = _createJob();
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signStartJob(PROVIDER_SIGNER_PK, jobId, expiresAt, 0);
+        bytes memory signature = _signStartJob(PROVIDER_SIGNER_PK, jobId, expiresAt);
 
         registry.setProviderStatus(providerId, IAgentHubRegistry.ProviderStatus.DISABLED);
 
         vm.expectRevert(AgentHubEscrow.ProviderNotActive.selector);
-        escrow.startJob(jobId, expiresAt, 0, signature);
+        escrow.startJob(jobId, expiresAt, signature);
     }
 
     function test_StartJobStillWorksWhenServiceWasDisabledAfterFunding() public {
@@ -181,7 +189,7 @@ contract AgentHubTest is Test {
         vm.prank(providerOwner);
         registry.setServiceStatus(serviceId, IAgentHubRegistry.ServiceStatus.DISABLED);
 
-        _startJob(jobId, block.timestamp + 1 hours, 0);
+        _startJob(jobId, block.timestamp + 1 hours);
 
         AgentHubEscrow.Job memory job = escrow.getJob(jobId);
         assertEq(uint8(job.status), uint8(AgentHubEscrow.JobStatus.RUNNING));
@@ -191,23 +199,27 @@ contract AgentHubTest is Test {
         uint256 jobId = _createJob();
         bytes32 outputCommitment = keccak256("output");
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signUserAcceptance(jobId, outputCommitment, expiresAt, 0);
+        bytes memory signature = _signUserAcceptance(jobId, outputCommitment, expiresAt);
 
         vm.expectRevert(AgentHubEscrow.JobNotRunning.selector);
-        escrow.settleWithUserSignature(jobId, outputCommitment, expiresAt, 0, signature);
+        escrow.settleWithUserSignature(jobId, outputCommitment, expiresAt, signature);
     }
 
     function test_SettleWithUserSignaturePaysProviderAndTreasuryAfterStartJob() public {
         uint256 jobId = _createJob();
-        _startJob(jobId, block.timestamp + 1 hours, 0);
+        _startJob(jobId, block.timestamp + 1 hours);
 
         bytes32 outputCommitment = keccak256("output");
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signUserAcceptance(jobId, outputCommitment, expiresAt, 0);
-        escrow.settleWithUserSignature(jobId, outputCommitment, expiresAt, 0, signature);
+        bytes memory signature = _signUserAcceptance(jobId, outputCommitment, expiresAt);
+        uint256 settledAt = block.timestamp;
+        escrow.settleWithUserSignature(jobId, outputCommitment, expiresAt, signature);
 
         AgentHubEscrow.Job memory job = escrow.getJob(jobId);
         assertEq(uint8(job.status), uint8(AgentHubEscrow.JobStatus.SETTLED));
+        assertEq(job.outputCommitment, outputCommitment);
+        assertEq(job.deliveredAt, 0);
+        assertEq(job.settledAt, settledAt);
         assertEq(usdc.balanceOf(providerPayout), 975e6);
         assertEq(usdc.balanceOf(treasury), 25e6);
         assertEq(usdc.balanceOf(address(escrow)), 0);
@@ -215,77 +227,279 @@ contract AgentHubTest is Test {
 
     function test_SettleWithUserSignatureRevertsWhenExpired() public {
         uint256 jobId = _createJob();
-        _startJob(jobId, block.timestamp + 1 hours, 0);
+        _startJob(jobId, block.timestamp + 1 hours);
 
         bytes32 outputCommitment = keccak256("output");
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signUserAcceptance(jobId, outputCommitment, expiresAt, 0);
+        bytes memory signature = _signUserAcceptance(jobId, outputCommitment, expiresAt);
 
         vm.warp(expiresAt + 1);
         vm.expectRevert(AgentHubEscrow.AuthorizationExpired.selector);
-        escrow.settleWithUserSignature(jobId, outputCommitment, expiresAt, 0, signature);
+        escrow.settleWithUserSignature(jobId, outputCommitment, expiresAt, signature);
     }
 
-    function test_SettleWithUserSignatureRevertsWhenNonceIsNotNextNonce() public {
+    function test_SettleWithUserSignatureReplayRevertsWhenJobIsNoLongerRunning() public {
         uint256 jobId = _createJob();
-        _startJob(jobId, block.timestamp + 1 hours, 0);
+        _startJob(jobId, block.timestamp + 1 hours);
 
         bytes32 outputCommitment = keccak256("output");
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signUserAcceptance(jobId, outputCommitment, expiresAt, 1);
+        bytes memory signature = _signUserAcceptance(jobId, outputCommitment, expiresAt);
 
-        vm.expectRevert(AgentHubEscrow.InvalidNonce.selector);
-        escrow.settleWithUserSignature(jobId, outputCommitment, expiresAt, 1, signature);
+        escrow.settleWithUserSignature(jobId, outputCommitment, expiresAt, signature);
+
+        vm.expectRevert(AgentHubEscrow.JobNotRunning.selector);
+        escrow.settleWithUserSignature(jobId, outputCommitment, expiresAt, signature);
     }
 
     function test_SettleAfterReviewTimeoutWithDeliveryAttestationAfterStartJob() public {
         uint256 jobId = _createJob();
-        _startJob(jobId, block.timestamp + 1 hours, 0);
+        _startJob(jobId, block.timestamp + 1 hours);
 
         AgentHubEscrow.Job memory runningJob = escrow.getJob(jobId);
         bytes32 outputCommitment = keccak256("output");
         uint64 deliveredAt = runningJob.workDeadline;
         uint256 expiresAt = uint256(deliveredAt) + runningJob.reviewTimeout + 1 hours;
-        bytes memory signature = _signDeliveryAttestation(jobId, outputCommitment, deliveredAt, expiresAt, 0);
+        bytes memory signature = _signDeliveryAttestation(jobId, outputCommitment, deliveredAt, expiresAt);
 
         vm.warp(uint256(deliveredAt) + runningJob.reviewTimeout + 1);
-        escrow.settleAfterReviewTimeout(jobId, outputCommitment, deliveredAt, expiresAt, 0, signature);
+        uint256 settledAt = block.timestamp;
+        escrow.settleAfterReviewTimeout(jobId, outputCommitment, deliveredAt, expiresAt, signature);
 
         AgentHubEscrow.Job memory job = escrow.getJob(jobId);
         assertEq(uint8(job.status), uint8(AgentHubEscrow.JobStatus.SETTLED));
+        assertEq(job.outputCommitment, outputCommitment);
+        assertEq(job.deliveredAt, deliveredAt);
+        assertEq(job.settledAt, settledAt);
         assertEq(usdc.balanceOf(providerPayout), 975e6);
         assertEq(usdc.balanceOf(treasury), 25e6);
     }
 
-    function test_SettleAfterReviewTimeoutRevertsWhenAttestationNonceIsNotNextNonce() public {
+    function test_SettleAfterReviewTimeoutRevertsWhenDeliveredBeforeStart() public {
         uint256 jobId = _createJob();
-        _startJob(jobId, block.timestamp + 1 hours, 0);
+        _startJob(jobId, block.timestamp + 1 hours);
+
+        AgentHubEscrow.Job memory runningJob = escrow.getJob(jobId);
+        bytes32 outputCommitment = keccak256("output");
+        uint256 deliveredAt = uint256(runningJob.startedAt) - 1;
+        uint256 expiresAt = block.timestamp + 1 hours;
+        bytes memory signature = _signDeliveryAttestation(jobId, outputCommitment, deliveredAt, expiresAt);
+
+        vm.expectRevert(AgentHubEscrow.DeliveredBeforeStart.selector);
+        escrow.settleAfterReviewTimeout(jobId, outputCommitment, deliveredAt, expiresAt, signature);
+    }
+
+    function test_SettleAfterReviewTimeoutRevertsWhenDeliveredAfterWorkDeadline() public {
+        uint256 jobId = _createJob();
+        _startJob(jobId, block.timestamp + 1 hours);
+
+        AgentHubEscrow.Job memory runningJob = escrow.getJob(jobId);
+        bytes32 outputCommitment = keccak256("output");
+        uint256 deliveredAt = uint256(runningJob.workDeadline) + 1;
+        uint256 expiresAt = deliveredAt + runningJob.reviewTimeout + 1 hours;
+        bytes memory signature = _signDeliveryAttestation(jobId, outputCommitment, deliveredAt, expiresAt);
+
+        vm.warp(deliveredAt + runningJob.reviewTimeout + 1);
+        vm.expectRevert(AgentHubEscrow.WorkDeadlineExceeded.selector);
+        escrow.settleAfterReviewTimeout(jobId, outputCommitment, deliveredAt, expiresAt, signature);
+    }
+
+    function test_SettleAfterReviewTimeoutRevertsWhenDeliveredInFuture() public {
+        uint256 jobId = _createJob();
+        _startJob(jobId, block.timestamp + 1 hours);
+
+        AgentHubEscrow.Job memory runningJob = escrow.getJob(jobId);
+        bytes32 outputCommitment = keccak256("output");
+        uint256 deliveredAt = runningJob.workDeadline;
+        uint256 expiresAt = deliveredAt + runningJob.reviewTimeout + 1 hours;
+        bytes memory signature = _signDeliveryAttestation(jobId, outputCommitment, deliveredAt, expiresAt);
+
+        vm.expectRevert(AgentHubEscrow.FutureDeliveredAt.selector);
+        escrow.settleAfterReviewTimeout(jobId, outputCommitment, deliveredAt, expiresAt, signature);
+    }
+
+    function test_SettleAfterReviewTimeoutUsesSnapshottedDeliveryAttester() public {
+        uint256 jobId = _createJob();
+        config.setDeliveryAttester(newAttester);
+        _startJob(jobId, block.timestamp + 1 hours);
+
+        AgentHubEscrow.Job memory runningJob = escrow.getJob(jobId);
+        bytes32 outputCommitment = keccak256("output");
+        uint256 deliveredAt = runningJob.workDeadline;
+        uint256 expiresAt = deliveredAt + runningJob.reviewTimeout + 1 hours;
+        bytes memory snapshotSignature =
+            _signDeliveryAttestationWithKey(ATTESTER_PK, jobId, outputCommitment, deliveredAt, expiresAt);
+
+        vm.warp(deliveredAt + runningJob.reviewTimeout + 1);
+        escrow.settleAfterReviewTimeout(jobId, outputCommitment, deliveredAt, expiresAt, snapshotSignature);
+
+        assertEq(uint8(escrow.getJob(jobId).status), uint8(AgentHubEscrow.JobStatus.SETTLED));
+    }
+
+    function test_SettleAfterReviewTimeoutRejectsNewDeliveryAttesterForOldJob() public {
+        uint256 jobId = _createJob();
+        config.setDeliveryAttester(newAttester);
+        _startJob(jobId, block.timestamp + 1 hours);
+
+        AgentHubEscrow.Job memory runningJob = escrow.getJob(jobId);
+        bytes32 outputCommitment = keccak256("output");
+        uint256 deliveredAt = runningJob.workDeadline;
+        uint256 expiresAt = deliveredAt + runningJob.reviewTimeout + 1 hours;
+        bytes memory newAttesterSignature =
+            _signDeliveryAttestationWithKey(NEW_ATTESTER_PK, jobId, outputCommitment, deliveredAt, expiresAt);
+
+        vm.warp(deliveredAt + runningJob.reviewTimeout + 1);
+        vm.expectRevert(AgentHubEscrow.InvalidSignature.selector);
+        escrow.settleAfterReviewTimeout(jobId, outputCommitment, deliveredAt, expiresAt, newAttesterSignature);
+    }
+
+    function test_SettleAfterReviewTimeoutReplayRevertsWhenJobIsNoLongerRunning() public {
+        uint256 jobId = _createJob();
+        _startJob(jobId, block.timestamp + 1 hours);
 
         AgentHubEscrow.Job memory runningJob = escrow.getJob(jobId);
         bytes32 outputCommitment = keccak256("output");
         uint64 deliveredAt = runningJob.workDeadline;
         uint256 expiresAt = uint256(deliveredAt) + runningJob.reviewTimeout + 1 hours;
-        bytes memory signature = _signDeliveryAttestation(jobId, outputCommitment, deliveredAt, expiresAt, 1);
+        bytes memory signature = _signDeliveryAttestation(jobId, outputCommitment, deliveredAt, expiresAt);
 
         vm.warp(uint256(deliveredAt) + runningJob.reviewTimeout + 1);
-        vm.expectRevert(AgentHubEscrow.InvalidNonce.selector);
-        escrow.settleAfterReviewTimeout(jobId, outputCommitment, deliveredAt, expiresAt, 1, signature);
+        escrow.settleAfterReviewTimeout(jobId, outputCommitment, deliveredAt, expiresAt, signature);
+
+        vm.expectRevert(AgentHubEscrow.JobNotRunning.selector);
+        escrow.settleAfterReviewTimeout(jobId, outputCommitment, deliveredAt, expiresAt, signature);
     }
 
     function test_RefundWithNoDeliveryAttestationAfterStartJob() public {
         uint256 jobId = _createJob();
-        _startJob(jobId, block.timestamp + 1 hours, 0);
+        _startJob(jobId, block.timestamp + 1 hours);
 
         AgentHubEscrow.Job memory runningJob = escrow.getJob(jobId);
         uint64 checkedAt = runningJob.workDeadline + 1;
         uint256 expiresAt = uint256(checkedAt) + 1 hours;
-        bytes memory signature = _signNoDeliveryAttestation(jobId, checkedAt, expiresAt, 0);
+        bytes memory signature = _signNoDeliveryAttestation(jobId, checkedAt, expiresAt);
 
         vm.warp(checkedAt);
-        escrow.refundWithNoDeliveryAttestation(jobId, checkedAt, expiresAt, 0, signature);
+        uint256 refundedAt = block.timestamp;
+        escrow.refundWithNoDeliveryAttestation(jobId, checkedAt, expiresAt, signature);
 
         AgentHubEscrow.Job memory job = escrow.getJob(jobId);
         assertEq(uint8(job.status), uint8(AgentHubEscrow.JobStatus.REFUNDED));
+        assertEq(job.refundedAt, refundedAt);
+        assertEq(usdc.balanceOf(user), 10_000e6);
+        assertEq(usdc.balanceOf(address(escrow)), 0);
+    }
+
+    function test_RefundWithNoDeliveryAttestationReplayRevertsWhenJobIsNoLongerRunning() public {
+        uint256 jobId = _createJob();
+        _startJob(jobId, block.timestamp + 1 hours);
+
+        AgentHubEscrow.Job memory runningJob = escrow.getJob(jobId);
+        uint64 checkedAt = runningJob.workDeadline + 1;
+        uint256 expiresAt = uint256(checkedAt) + 1 hours;
+        bytes memory signature = _signNoDeliveryAttestation(jobId, checkedAt, expiresAt);
+
+        vm.warp(checkedAt);
+        escrow.refundWithNoDeliveryAttestation(jobId, checkedAt, expiresAt, signature);
+
+        vm.expectRevert(AgentHubEscrow.JobNotRunning.selector);
+        escrow.refundWithNoDeliveryAttestation(jobId, checkedAt, expiresAt, signature);
+    }
+
+    function test_RefundWithNoDeliveryAttestationUsesSnapshottedDeliveryAttester() public {
+        uint256 jobId = _createJob();
+        config.setDeliveryAttester(newAttester);
+        _startJob(jobId, block.timestamp + 1 hours);
+
+        AgentHubEscrow.Job memory runningJob = escrow.getJob(jobId);
+        uint256 checkedAt = uint256(runningJob.workDeadline) + 1;
+        uint256 expiresAt = checkedAt + 1 hours;
+        bytes memory snapshotSignature = _signNoDeliveryAttestationWithKey(ATTESTER_PK, jobId, checkedAt, expiresAt);
+
+        vm.warp(checkedAt);
+        escrow.refundWithNoDeliveryAttestation(jobId, checkedAt, expiresAt, snapshotSignature);
+
+        AgentHubEscrow.Job memory job = escrow.getJob(jobId);
+        assertEq(uint8(job.status), uint8(AgentHubEscrow.JobStatus.REFUNDED));
+        assertEq(job.refundedAt, checkedAt);
+    }
+
+    function test_RefundWithNoDeliveryAttestationRejectsNewDeliveryAttesterForOldJob() public {
+        uint256 jobId = _createJob();
+        config.setDeliveryAttester(newAttester);
+        _startJob(jobId, block.timestamp + 1 hours);
+
+        AgentHubEscrow.Job memory runningJob = escrow.getJob(jobId);
+        uint256 checkedAt = uint256(runningJob.workDeadline) + 1;
+        uint256 expiresAt = checkedAt + 1 hours;
+        bytes memory newAttesterSignature =
+            _signNoDeliveryAttestationWithKey(NEW_ATTESTER_PK, jobId, checkedAt, expiresAt);
+
+        vm.warp(checkedAt);
+        vm.expectRevert(AgentHubEscrow.InvalidSignature.selector);
+        escrow.refundWithNoDeliveryAttestation(jobId, checkedAt, expiresAt, newAttesterSignature);
+    }
+
+    function test_TwoJobsCanStartAndSettleInAnyOrder() public {
+        uint256 firstJobId = _createJob();
+        uint256 secondJobId = _createJob();
+        uint256 expiresAt = block.timestamp + 1 hours;
+
+        escrow.startJob(secondJobId, expiresAt, _signStartJob(PROVIDER_SIGNER_PK, secondJobId, expiresAt));
+        escrow.startJob(firstJobId, expiresAt, _signStartJob(PROVIDER_SIGNER_PK, firstJobId, expiresAt));
+
+        bytes32 firstOutputCommitment = keccak256("first output");
+        bytes32 secondOutputCommitment = keccak256("second output");
+        escrow.settleWithUserSignature(
+            firstJobId,
+            firstOutputCommitment,
+            expiresAt,
+            _signUserAcceptance(firstJobId, firstOutputCommitment, expiresAt)
+        );
+        escrow.settleWithUserSignature(
+            secondJobId,
+            secondOutputCommitment,
+            expiresAt,
+            _signUserAcceptance(secondJobId, secondOutputCommitment, expiresAt)
+        );
+
+        assertEq(uint8(escrow.getJob(firstJobId).status), uint8(AgentHubEscrow.JobStatus.SETTLED));
+        assertEq(uint8(escrow.getJob(secondJobId).status), uint8(AgentHubEscrow.JobStatus.SETTLED));
+        assertEq(usdc.balanceOf(providerPayout), 1_950e6);
+        assertEq(usdc.balanceOf(treasury), 50e6);
+    }
+
+    function test_TwoJobsCanRefundInAnyOrder() public {
+        uint256 firstJobId = _createJob();
+        uint256 secondJobId = _createJob();
+        uint256 startExpiresAt = block.timestamp + 1 hours;
+
+        escrow.startJob(secondJobId, startExpiresAt, _signStartJob(PROVIDER_SIGNER_PK, secondJobId, startExpiresAt));
+        escrow.startJob(firstJobId, startExpiresAt, _signStartJob(PROVIDER_SIGNER_PK, firstJobId, startExpiresAt));
+
+        AgentHubEscrow.Job memory firstJob = escrow.getJob(firstJobId);
+        AgentHubEscrow.Job memory secondJob = escrow.getJob(secondJobId);
+        uint64 firstCheckedAt = firstJob.workDeadline + 1;
+        uint64 secondCheckedAt = secondJob.workDeadline + 1;
+        uint256 firstExpiresAt = uint256(firstCheckedAt) + 1 hours;
+        uint256 secondExpiresAt = uint256(secondCheckedAt) + 1 hours;
+
+        vm.warp(secondCheckedAt);
+        escrow.refundWithNoDeliveryAttestation(
+            secondJobId,
+            secondCheckedAt,
+            secondExpiresAt,
+            _signNoDeliveryAttestation(secondJobId, secondCheckedAt, secondExpiresAt)
+        );
+        escrow.refundWithNoDeliveryAttestation(
+            firstJobId,
+            firstCheckedAt,
+            firstExpiresAt,
+            _signNoDeliveryAttestation(firstJobId, firstCheckedAt, firstExpiresAt)
+        );
+
+        assertEq(uint8(escrow.getJob(firstJobId).status), uint8(AgentHubEscrow.JobStatus.REFUNDED));
+        assertEq(uint8(escrow.getJob(secondJobId).status), uint8(AgentHubEscrow.JobStatus.REFUNDED));
         assertEq(usdc.balanceOf(user), 10_000e6);
         assertEq(usdc.balanceOf(address(escrow)), 0);
     }
@@ -295,12 +509,14 @@ contract AgentHubTest is Test {
         AgentHubEscrow.Job memory createdJob = escrow.getJob(jobId);
 
         vm.warp(createdJob.queueDeadline + 1);
+        uint256 refundedAt = block.timestamp;
         escrow.refundAfterQueueTimeout(jobId);
 
         AgentHubEscrow.Job memory job = escrow.getJob(jobId);
         assertEq(uint8(job.status), uint8(AgentHubEscrow.JobStatus.REFUNDED));
         assertEq(job.workDeadline, 0);
         assertEq(job.finalRefundDeadline, 0);
+        assertEq(job.refundedAt, refundedAt);
         assertEq(usdc.balanceOf(user), 10_000e6);
         assertEq(usdc.balanceOf(address(escrow)), 0);
     }
@@ -311,14 +527,16 @@ contract AgentHubTest is Test {
         vm.expectRevert(AgentHubEscrow.JobNotRunning.selector);
         escrow.refundAfterFinalTimeout(jobId);
 
-        _startJob(jobId, block.timestamp + 1 hours, 0);
+        _startJob(jobId, block.timestamp + 1 hours);
         AgentHubEscrow.Job memory runningJob = escrow.getJob(jobId);
 
         vm.warp(runningJob.finalRefundDeadline + 1);
+        uint256 refundedAt = block.timestamp;
         escrow.refundAfterFinalTimeout(jobId);
 
         AgentHubEscrow.Job memory job = escrow.getJob(jobId);
         assertEq(uint8(job.status), uint8(AgentHubEscrow.JobStatus.REFUNDED));
+        assertEq(job.refundedAt, refundedAt);
         assertEq(usdc.balanceOf(user), 10_000e6);
         assertEq(usdc.balanceOf(address(escrow)), 0);
     }
@@ -335,13 +553,13 @@ contract AgentHubTest is Test {
         escrow.createJob(serviceId, REQUEST_ID, keccak256("input"), QUEUE_TIMEOUT, expiresAt, signature);
     }
 
-    function test_CreateJobRevertsWhenQueueTimeoutIsNotGreaterThanOneMinute() public {
+    function test_CreateJobRevertsWhenQueueTimeoutIsBelowOneMinute() public {
         uint256 expiresAt = block.timestamp + 1 hours;
         bytes memory signature = _signCreateJob(ATTESTER_PK, user, serviceId, REQUEST_ID, keccak256("input"), expiresAt);
 
         vm.prank(user);
         vm.expectRevert(AgentHubEscrow.QueueTimeoutTooShort.selector);
-        escrow.createJob(serviceId, REQUEST_ID, keccak256("input"), 1 minutes, expiresAt, signature);
+        escrow.createJob(serviceId, REQUEST_ID, keccak256("input"), 1 minutes - 1, expiresAt, signature);
     }
 
     function test_CreateJobRevertsWhenAuthorizationExpired() public {
@@ -419,24 +637,14 @@ contract AgentHubTest is Test {
         return escrow.createJob(serviceId, requestId, keccak256("input"), QUEUE_TIMEOUT, expiresAt, signature);
     }
 
-    function _startJob(uint256 jobId, uint256 expiresAt, uint256 nonce) private {
-        escrow.startJob(jobId, expiresAt, nonce, _signStartJob(PROVIDER_SIGNER_PK, jobId, expiresAt, nonce));
+    function _startJob(uint256 jobId, uint256 expiresAt) private {
+        escrow.startJob(jobId, expiresAt, _signStartJob(PROVIDER_SIGNER_PK, jobId, expiresAt));
     }
 
-    function _signStartJob(uint256 privateKey, uint256 jobId, uint256 expiresAt, uint256 nonce)
-        private
-        view
-        returns (bytes memory)
-    {
+    function _signStartJob(uint256 privateKey, uint256 jobId, uint256 expiresAt) private view returns (bytes memory) {
         bytes32 structHash = keccak256(
             abi.encode(
-                escrow.START_JOB_AUTHORIZATION_TYPEHASH(),
-                jobId,
-                providerId,
-                serviceId,
-                keccak256("input"),
-                expiresAt,
-                nonce
+                escrow.START_JOB_AUTHORIZATION_TYPEHASH(), jobId, providerId, serviceId, keccak256("input"), expiresAt
             )
         );
         return _sign(privateKey, _typedDataHash(structHash));
@@ -467,7 +675,7 @@ contract AgentHubTest is Test {
         return _sign(privateKey, _typedDataHash(structHash));
     }
 
-    function _signUserAcceptance(uint256 jobId, bytes32 outputCommitment, uint256 expiresAt, uint256 nonce)
+    function _signUserAcceptance(uint256 jobId, bytes32 outputCommitment, uint256 expiresAt)
         private
         view
         returns (bytes memory)
@@ -480,19 +688,26 @@ contract AgentHubTest is Test {
                 serviceId,
                 keccak256("input"),
                 outputCommitment,
-                expiresAt,
-                nonce
+                expiresAt
             )
         );
         return _sign(USER_PK, _typedDataHash(structHash));
     }
 
-    function _signDeliveryAttestation(
+    function _signDeliveryAttestation(uint256 jobId, bytes32 outputCommitment, uint256 deliveredAt, uint256 expiresAt)
+        private
+        view
+        returns (bytes memory)
+    {
+        return _signDeliveryAttestationWithKey(ATTESTER_PK, jobId, outputCommitment, deliveredAt, expiresAt);
+    }
+
+    function _signDeliveryAttestationWithKey(
+        uint256 privateKey,
         uint256 jobId,
         bytes32 outputCommitment,
-        uint64 deliveredAt,
-        uint256 expiresAt,
-        uint256 nonce
+        uint256 deliveredAt,
+        uint256 expiresAt
     ) private view returns (bytes memory) {
         bytes32 structHash = keccak256(
             abi.encode(
@@ -503,14 +718,21 @@ contract AgentHubTest is Test {
                 keccak256("input"),
                 outputCommitment,
                 deliveredAt,
-                expiresAt,
-                nonce
+                expiresAt
             )
         );
-        return _sign(ATTESTER_PK, _typedDataHash(structHash));
+        return _sign(privateKey, _typedDataHash(structHash));
     }
 
-    function _signNoDeliveryAttestation(uint256 jobId, uint64 checkedAt, uint256 expiresAt, uint256 nonce)
+    function _signNoDeliveryAttestation(uint256 jobId, uint256 checkedAt, uint256 expiresAt)
+        private
+        view
+        returns (bytes memory)
+    {
+        return _signNoDeliveryAttestationWithKey(ATTESTER_PK, jobId, checkedAt, expiresAt);
+    }
+
+    function _signNoDeliveryAttestationWithKey(uint256 privateKey, uint256 jobId, uint256 checkedAt, uint256 expiresAt)
         private
         view
         returns (bytes memory)
@@ -523,11 +745,10 @@ contract AgentHubTest is Test {
                 serviceId,
                 keccak256("input"),
                 checkedAt,
-                expiresAt,
-                nonce
+                expiresAt
             )
         );
-        return _sign(ATTESTER_PK, _typedDataHash(structHash));
+        return _sign(privateKey, _typedDataHash(structHash));
     }
 
     function _typedDataHash(bytes32 structHash) private view returns (bytes32) {

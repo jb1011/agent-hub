@@ -29,18 +29,24 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         address user;
         address providerPayoutWallet;
         address treasury;
+        address deliveryAttester;
         uint256 serviceId;
         uint256 providerId;
         uint256 price;
         uint256 protocolFee;
         uint64 queueDeadline;
+        uint64 startedAt;
         uint64 workTimeout;
         uint64 workDeadline;
         uint64 reviewTimeout;
         uint64 finalRefundDeadline;
+        uint64 deliveredAt;
+        uint64 settledAt;
+        uint64 refundedAt;
         JobStatus status;
         bytes32 requestId;
         bytes32 inputCommitment;
+        bytes32 outputCommitment;
     }
 
     error ZeroAddress();
@@ -57,8 +63,9 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
     error AuthorizationExpired();
     error InvalidRequestId();
     error RequestAlreadyUsed();
-    error InvalidNonce();
     error WorkDeadlineExceeded();
+    error DeliveredBeforeStart();
+    error FutureDeliveredAt();
     error ReviewTimeoutNotElapsed();
     error FinalRefundDeadlineNotElapsed();
     error CheckedBeforeWorkDeadline();
@@ -66,19 +73,19 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
     error InvalidSignature();
 
     bytes32 public constant CREATE_JOB_AUTHORIZATION_TYPEHASH = keccak256(
-        "CreateJobAuthorization(address user,uint256 providerId,uint256 serviceId,uint256 price,uint64 workTimeout,uint64 queueTimeoutSeconds,bytes32 requestId,bytes32 inputCommitment,uint256 expiresAt)"
+        "CreateJobAuthorization(address user,uint256 providerId,uint256 serviceId,uint256 price,uint256 workTimeout,uint256 queueTimeoutSeconds,bytes32 requestId,bytes32 inputCommitment,uint256 expiresAt)"
     );
     bytes32 public constant START_JOB_AUTHORIZATION_TYPEHASH = keccak256(
-        "StartJobAuthorization(uint256 jobId,uint256 providerId,uint256 serviceId,bytes32 inputCommitment,uint256 expiresAt,uint256 nonce)"
+        "StartJobAuthorization(uint256 jobId,uint256 providerId,uint256 serviceId,bytes32 inputCommitment,uint256 expiresAt)"
     );
     bytes32 public constant JOB_ACCEPTANCE_TYPEHASH = keccak256(
-        "JobAcceptance(uint256 jobId,uint256 providerId,uint256 serviceId,bytes32 inputCommitment,bytes32 outputCommitment,uint256 expiresAt,uint256 nonce)"
+        "JobAcceptance(uint256 jobId,uint256 providerId,uint256 serviceId,bytes32 inputCommitment,bytes32 outputCommitment,uint256 expiresAt)"
     );
     bytes32 public constant DELIVERY_ATTESTATION_TYPEHASH = keccak256(
-        "DeliveryAttestation(uint256 jobId,uint256 providerId,uint256 serviceId,bytes32 inputCommitment,bytes32 outputCommitment,uint256 deliveredAt,uint256 expiresAt,uint256 nonce)"
+        "DeliveryAttestation(uint256 jobId,uint256 providerId,uint256 serviceId,bytes32 inputCommitment,bytes32 outputCommitment,uint256 deliveredAt,uint256 expiresAt)"
     );
     bytes32 public constant NO_DELIVERY_ATTESTATION_TYPEHASH = keccak256(
-        "NoDeliveryAttestation(uint256 jobId,uint256 providerId,uint256 serviceId,bytes32 inputCommitment,uint256 checkedAt,uint256 expiresAt,uint256 nonce)"
+        "NoDeliveryAttestation(uint256 jobId,uint256 providerId,uint256 serviceId,bytes32 inputCommitment,uint256 checkedAt,uint256 expiresAt)"
     );
 
     IAgentHubConfig private immutable CONFIG;
@@ -88,9 +95,6 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
 
     mapping(uint256 jobId => Job job) private _jobs;
     mapping(bytes32 requestId => bool used) public usedRequestIds;
-    mapping(uint256 providerId => uint256 nonce) public nextStartNonce;
-    mapping(address user => uint256 nonce) public nextUserAcceptanceNonce;
-    uint256 public nextAttestationNonce;
 
     event JobCreated(
         uint256 indexed jobId,
@@ -153,7 +157,7 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         if (requestId == bytes32(0)) revert InvalidRequestId();
         if (inputCommitment == bytes32(0)) revert InvalidCommitment();
         if (usedRequestIds[requestId]) revert RequestAlreadyUsed();
-        if (queueTimeoutSeconds <= MIN_QUEUE_TIMEOUT_SECONDS) revert QueueTimeoutTooShort();
+        if (queueTimeoutSeconds < MIN_QUEUE_TIMEOUT_SECONDS) revert QueueTimeoutTooShort();
 
         IAgentHubRegistry.Service memory service = REGISTRY.getService(serviceId);
         if (service.status != IAgentHubRegistry.ServiceStatus.ACTIVE) revert ServiceNotActive();
@@ -180,6 +184,7 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         job.protocolFee = protocolFee;
         job.providerPayoutWallet = provider.payoutWallet;
         job.treasury = CONFIG.treasury();
+        job.deliveryAttester = CONFIG.deliveryAttester();
         job.queueDeadline = queueDeadline;
         job.workTimeout = service.workTimeout;
         job.reviewTimeout = reviewTimeout;
@@ -192,23 +197,17 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         _emitJobCreated(jobId);
     }
 
-    function startJob(uint256 jobId, uint256 expiresAt, uint256 nonce, bytes calldata providerSignature)
-        external
-        nonReentrant
-    {
+    function startJob(uint256 jobId, uint256 expiresAt, bytes calldata providerSignature) external nonReentrant {
         Job storage job = _queuedJob(jobId);
         if (block.timestamp > job.queueDeadline) revert QueueDeadlineExceeded();
         if (block.timestamp > expiresAt) revert AuthorizationExpired();
-        if (nonce != nextStartNonce[job.providerId]) revert InvalidNonce();
 
         bytes32 structHash =
-            _hashStartJobAuthorization(jobId, job.providerId, job.serviceId, job.inputCommitment, expiresAt, nonce);
+            _hashStartJobAuthorization(jobId, job.providerId, job.serviceId, job.inputCommitment, expiresAt);
         address signer = ECDSA.recoverCalldata(_hashTypedDataV4(structHash), providerSignature);
         IAgentHubRegistry.Provider memory provider = REGISTRY.getProvider(job.providerId);
         if (provider.status != IAgentHubRegistry.ProviderStatus.ACTIVE) revert ProviderNotActive();
         if (signer != provider.signer) revert InvalidSignature();
-
-        nextStartNonce[job.providerId]++;
 
         uint64 startedAt = block.timestamp.toUint64();
         uint64 workDeadline = (block.timestamp + job.workTimeout).toUint64();
@@ -216,6 +215,7 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
             (uint256(workDeadline) + job.reviewTimeout + CONFIG.refundGracePeriodSeconds()).toUint64();
 
         job.status = JobStatus.RUNNING;
+        job.startedAt = startedAt;
         job.workDeadline = workDeadline;
         job.finalRefundDeadline = finalRefundDeadline;
 
@@ -226,22 +226,17 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         uint256 jobId,
         bytes32 outputCommitment,
         uint256 expiresAt,
-        uint256 nonce,
         bytes calldata userSignature
     ) external nonReentrant {
         if (outputCommitment == bytes32(0)) revert InvalidCommitment();
         if (block.timestamp > expiresAt) revert AuthorizationExpired();
         Job storage job = _runningJob(jobId);
-        if (nonce != nextUserAcceptanceNonce[job.user]) revert InvalidNonce();
 
-        bytes32 structHash = _hashJobAcceptance(
-            jobId, job.providerId, job.serviceId, job.inputCommitment, outputCommitment, expiresAt, nonce
-        );
+        bytes32 structHash =
+            _hashJobAcceptance(jobId, job.providerId, job.serviceId, job.inputCommitment, outputCommitment, expiresAt);
         if (ECDSA.recoverCalldata(_hashTypedDataV4(structHash), userSignature) != job.user) revert InvalidSignature();
 
-        nextUserAcceptanceNonce[job.user]++;
-
-        uint256 providerAmount = _settle(job);
+        uint256 providerAmount = _settle(job, outputCommitment, 0);
         emit JobSettledWithUserSignature(
             jobId, outputCommitment, job.providerPayoutWallet, providerAmount, job.protocolFee
         );
@@ -250,61 +245,53 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
     function settleAfterReviewTimeout(
         uint256 jobId,
         bytes32 outputCommitment,
-        uint64 deliveredAt,
+        uint256 deliveredAt,
         uint256 expiresAt,
-        uint256 nonce,
         bytes calldata deliveryAttesterSignature
     ) external nonReentrant {
         if (outputCommitment == bytes32(0)) revert InvalidCommitment();
         if (block.timestamp > expiresAt) revert AuthorizationExpired();
-        if (nonce != nextAttestationNonce) revert InvalidNonce();
         Job storage job = _runningJob(jobId);
+        if (deliveredAt < job.startedAt) revert DeliveredBeforeStart();
         if (deliveredAt > job.workDeadline) revert WorkDeadlineExceeded();
-        if (block.timestamp <= uint256(deliveredAt) + job.reviewTimeout) revert ReviewTimeoutNotElapsed();
+        if (deliveredAt > block.timestamp) revert FutureDeliveredAt();
+        uint64 deliveredAt64 = deliveredAt.toUint64();
+        if (block.timestamp <= deliveredAt + job.reviewTimeout) revert ReviewTimeoutNotElapsed();
 
         bytes32 structHash = _hashDeliveryAttestation(
-            jobId, job.providerId, job.serviceId, job.inputCommitment, outputCommitment, deliveredAt, expiresAt, nonce
+            jobId, job.providerId, job.serviceId, job.inputCommitment, outputCommitment, deliveredAt, expiresAt
         );
-        if (ECDSA.recoverCalldata(_hashTypedDataV4(structHash), deliveryAttesterSignature) != CONFIG.deliveryAttester())
-        {
+        if (ECDSA.recoverCalldata(_hashTypedDataV4(structHash), deliveryAttesterSignature) != job.deliveryAttester) {
             revert InvalidSignature();
         }
 
-        nextAttestationNonce++;
-
-        uint256 providerAmount = _settle(job);
+        uint256 providerAmount = _settle(job, outputCommitment, deliveredAt64);
         emit JobSettledAfterReviewTimeout(
-            jobId, outputCommitment, deliveredAt, job.providerPayoutWallet, providerAmount, job.protocolFee
+            jobId, outputCommitment, deliveredAt64, job.providerPayoutWallet, providerAmount, job.protocolFee
         );
     }
 
     function refundWithNoDeliveryAttestation(
         uint256 jobId,
-        uint64 checkedAt,
+        uint256 checkedAt,
         uint256 expiresAt,
-        uint256 nonce,
         bytes calldata noDeliveryAttesterSignature
     ) external nonReentrant {
         if (block.timestamp > expiresAt) revert AuthorizationExpired();
-        if (nonce != nextAttestationNonce) revert InvalidNonce();
         Job storage job = _runningJob(jobId);
         if (checkedAt <= job.workDeadline) revert CheckedBeforeWorkDeadline();
         if (checkedAt > block.timestamp) revert FutureCheckedAt();
+        uint64 checkedAt64 = checkedAt.toUint64();
 
-        bytes32 structHash = _hashNoDeliveryAttestation(
-            jobId, job.providerId, job.serviceId, job.inputCommitment, checkedAt, expiresAt, nonce
-        );
-        if (
-            ECDSA.recoverCalldata(_hashTypedDataV4(structHash), noDeliveryAttesterSignature)
-                != CONFIG.deliveryAttester()
-        ) {
+        bytes32 structHash =
+            _hashNoDeliveryAttestation(jobId, job.providerId, job.serviceId, job.inputCommitment, checkedAt, expiresAt);
+        if (ECDSA.recoverCalldata(_hashTypedDataV4(structHash), noDeliveryAttesterSignature) != job.deliveryAttester) {
             revert InvalidSignature();
         }
 
-        nextAttestationNonce++;
         uint256 amount = _refund(job);
 
-        emit JobRefundedWithNoDeliveryAttestation(jobId, checkedAt, amount);
+        emit JobRefundedWithNoDeliveryAttestation(jobId, checkedAt64, amount);
     }
 
     function refundAfterQueueTimeout(uint256 jobId) external nonReentrant {
@@ -347,8 +334,14 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         return PAYMENT_TOKEN;
     }
 
-    function _settle(Job storage job) private returns (uint256 providerAmount) {
+    function _settle(Job storage job, bytes32 outputCommitment, uint64 deliveredAt)
+        private
+        returns (uint256 providerAmount)
+    {
         job.status = JobStatus.SETTLED;
+        job.outputCommitment = outputCommitment;
+        job.deliveredAt = deliveredAt;
+        job.settledAt = block.timestamp.toUint64();
         providerAmount = job.price - job.protocolFee;
 
         if (providerAmount != 0) PAYMENT_TOKEN.safeTransfer(job.providerPayoutWallet, providerAmount);
@@ -357,6 +350,7 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
 
     function _refund(Job storage job) private returns (uint256 amount) {
         job.status = JobStatus.REFUNDED;
+        job.refundedAt = block.timestamp.toUint64();
         amount = job.price;
         PAYMENT_TOKEN.safeTransfer(job.user, amount);
     }
@@ -440,8 +434,7 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         uint256 providerId,
         uint256 serviceId,
         bytes32 inputCommitment,
-        uint256 expiresAt,
-        uint256 nonce
+        uint256 expiresAt
     ) private pure returns (bytes32 structHash) {
         bytes32 typeHash = START_JOB_AUTHORIZATION_TYPEHASH;
         assembly ("memory-safe") {
@@ -452,9 +445,8 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
             mstore(add(ptr, 0x60), serviceId)
             mstore(add(ptr, 0x80), inputCommitment)
             mstore(add(ptr, 0xa0), expiresAt)
-            mstore(add(ptr, 0xc0), nonce)
-            mstore(0x40, add(ptr, 0xe0))
-            structHash := keccak256(ptr, 0xe0)
+            mstore(0x40, add(ptr, 0xc0))
+            structHash := keccak256(ptr, 0xc0)
         }
     }
 
@@ -464,8 +456,7 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         uint256 serviceId,
         bytes32 inputCommitment,
         bytes32 outputCommitment,
-        uint256 expiresAt,
-        uint256 nonce
+        uint256 expiresAt
     ) private pure returns (bytes32 structHash) {
         bytes32 typeHash = JOB_ACCEPTANCE_TYPEHASH;
         assembly ("memory-safe") {
@@ -477,9 +468,8 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
             mstore(add(ptr, 0x80), inputCommitment)
             mstore(add(ptr, 0xa0), outputCommitment)
             mstore(add(ptr, 0xc0), expiresAt)
-            mstore(add(ptr, 0xe0), nonce)
-            mstore(0x40, add(ptr, 0x100))
-            structHash := keccak256(ptr, 0x100)
+            mstore(0x40, add(ptr, 0xe0))
+            structHash := keccak256(ptr, 0xe0)
         }
     }
 
@@ -489,9 +479,8 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         uint256 serviceId,
         bytes32 inputCommitment,
         bytes32 outputCommitment,
-        uint64 deliveredAt,
-        uint256 expiresAt,
-        uint256 nonce
+        uint256 deliveredAt,
+        uint256 expiresAt
     ) private pure returns (bytes32 structHash) {
         bytes32 typeHash = DELIVERY_ATTESTATION_TYPEHASH;
         assembly ("memory-safe") {
@@ -504,9 +493,8 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
             mstore(add(ptr, 0xa0), outputCommitment)
             mstore(add(ptr, 0xc0), deliveredAt)
             mstore(add(ptr, 0xe0), expiresAt)
-            mstore(add(ptr, 0x100), nonce)
-            mstore(0x40, add(ptr, 0x120))
-            structHash := keccak256(ptr, 0x120)
+            mstore(0x40, add(ptr, 0x100))
+            structHash := keccak256(ptr, 0x100)
         }
     }
 
@@ -515,9 +503,8 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         uint256 providerId,
         uint256 serviceId,
         bytes32 inputCommitment,
-        uint64 checkedAt,
-        uint256 expiresAt,
-        uint256 nonce
+        uint256 checkedAt,
+        uint256 expiresAt
     ) private pure returns (bytes32 structHash) {
         bytes32 typeHash = NO_DELIVERY_ATTESTATION_TYPEHASH;
         assembly ("memory-safe") {
@@ -529,9 +516,8 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
             mstore(add(ptr, 0x80), inputCommitment)
             mstore(add(ptr, 0xa0), checkedAt)
             mstore(add(ptr, 0xc0), expiresAt)
-            mstore(add(ptr, 0xe0), nonce)
-            mstore(0x40, add(ptr, 0x100))
-            structHash := keccak256(ptr, 0x100)
+            mstore(0x40, add(ptr, 0xe0))
+            structHash := keccak256(ptr, 0xe0)
         }
     }
 }
