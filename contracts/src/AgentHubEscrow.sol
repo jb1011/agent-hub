@@ -39,6 +39,7 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         uint64 reviewTimeout;
         uint64 finalRefundDeadline;
         JobStatus status;
+        bytes32 requestId;
         bytes32 inputCommitment;
     }
 
@@ -54,6 +55,8 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
     error QueueDeadlineNotElapsed();
     error QueueTimeoutTooShort();
     error AuthorizationExpired();
+    error InvalidRequestId();
+    error RequestAlreadyUsed();
     error InvalidNonce();
     error WorkDeadlineExceeded();
     error ReviewTimeoutNotElapsed();
@@ -62,6 +65,9 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
     error FutureCheckedAt();
     error InvalidSignature();
 
+    bytes32 public constant CREATE_JOB_AUTHORIZATION_TYPEHASH = keccak256(
+        "CreateJobAuthorization(address user,uint256 providerId,uint256 serviceId,uint256 price,uint64 workTimeout,uint64 queueTimeoutSeconds,bytes32 requestId,bytes32 inputCommitment,uint256 expiresAt)"
+    );
     bytes32 public constant START_JOB_AUTHORIZATION_TYPEHASH = keccak256(
         "StartJobAuthorization(uint256 jobId,uint256 providerId,uint256 serviceId,bytes32 inputCommitment,uint256 expiresAt,uint256 nonce)"
     );
@@ -81,6 +87,7 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
     uint256 public nextJobId = 1;
 
     mapping(uint256 jobId => Job job) private _jobs;
+    mapping(bytes32 requestId => bool used) public usedRequestIds;
     mapping(uint256 providerId => uint256 nonce) public nextStartNonce;
     mapping(address user => uint256 nonce) public nextUserAcceptanceNonce;
     uint256 public nextAttestationNonce;
@@ -95,6 +102,7 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         uint256 protocolFee,
         address providerPayoutWallet,
         address treasury,
+        bytes32 requestId,
         bytes32 inputCommitment
     );
     event JobStarted(
@@ -133,12 +141,18 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         PAYMENT_TOKEN = IERC20(token);
     }
 
-    function createJob(uint256 serviceId, bytes32 inputCommitment, uint64 queueTimeoutSeconds)
-        external
-        nonReentrant
-        returns (uint256 jobId)
-    {
+    function createJob(
+        uint256 serviceId,
+        bytes32 requestId,
+        bytes32 inputCommitment,
+        uint64 queueTimeoutSeconds,
+        uint256 expiresAt,
+        bytes calldata deliveryAttesterSignature
+    ) external nonReentrant returns (uint256 jobId) {
+        if (block.timestamp > expiresAt) revert AuthorizationExpired();
+        if (requestId == bytes32(0)) revert InvalidRequestId();
         if (inputCommitment == bytes32(0)) revert InvalidCommitment();
+        if (usedRequestIds[requestId]) revert RequestAlreadyUsed();
         if (queueTimeoutSeconds <= MIN_QUEUE_TIMEOUT_SECONDS) revert QueueTimeoutTooShort();
 
         IAgentHubRegistry.Service memory service = REGISTRY.getService(serviceId);
@@ -147,11 +161,17 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         IAgentHubRegistry.Provider memory provider = REGISTRY.getProvider(service.providerId);
         if (provider.status != IAgentHubRegistry.ProviderStatus.ACTIVE) revert ProviderNotActive();
 
+        _requireCreateJobAuthorization(
+            serviceId, service, queueTimeoutSeconds, requestId, inputCommitment, expiresAt, deliveryAttesterSignature
+        );
+
         uint256 protocolFee = service.price * CONFIG.protocolFeeBps() / 10_000;
         uint64 queueDeadline = (block.timestamp + queueTimeoutSeconds).toUint64();
         uint64 reviewTimeout = CONFIG.reviewTimeoutSeconds();
 
         jobId = nextJobId++;
+        usedRequestIds[requestId] = true;
+
         Job storage job = _jobs[jobId];
         job.user = msg.sender;
         job.serviceId = serviceId;
@@ -164,6 +184,7 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         job.workTimeout = service.workTimeout;
         job.reviewTimeout = reviewTimeout;
         job.status = JobStatus.FUNDED;
+        job.requestId = requestId;
         job.inputCommitment = inputCommitment;
 
         PAYMENT_TOKEN.safeTransferFrom(msg.sender, address(this), service.price);
@@ -352,6 +373,7 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
             job.protocolFee,
             job.providerPayoutWallet,
             job.treasury,
+            job.requestId,
             job.inputCommitment
         );
     }
@@ -366,6 +388,51 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
         job = _jobs[jobId];
         if (job.user == address(0)) revert InvalidJob();
         if (job.status != JobStatus.RUNNING) revert JobNotRunning();
+    }
+
+    function _requireCreateJobAuthorization(
+        uint256 serviceId,
+        IAgentHubRegistry.Service memory service,
+        uint64 queueTimeoutSeconds,
+        bytes32 requestId,
+        bytes32 inputCommitment,
+        uint256 expiresAt,
+        bytes calldata deliveryAttesterSignature
+    ) private view {
+        bytes32 structHash = _hashCreateJobAuthorization(
+            msg.sender, serviceId, service, queueTimeoutSeconds, requestId, inputCommitment, expiresAt
+        );
+        if (ECDSA.recoverCalldata(_hashTypedDataV4(structHash), deliveryAttesterSignature) != CONFIG.deliveryAttester())
+        {
+            revert InvalidSignature();
+        }
+    }
+
+    function _hashCreateJobAuthorization(
+        address user,
+        uint256 serviceId,
+        IAgentHubRegistry.Service memory service,
+        uint64 queueTimeoutSeconds,
+        bytes32 requestId,
+        bytes32 inputCommitment,
+        uint256 expiresAt
+    ) private pure returns (bytes32 structHash) {
+        bytes32 typeHash = CREATE_JOB_AUTHORIZATION_TYPEHASH;
+        assembly ("memory-safe") {
+            let ptr := mload(0x40)
+            mstore(ptr, typeHash)
+            mstore(add(ptr, 0x20), user)
+            mstore(add(ptr, 0x40), mload(service))
+            mstore(add(ptr, 0x60), serviceId)
+            mstore(add(ptr, 0x80), mload(add(service, 0x20)))
+            mstore(add(ptr, 0xa0), mload(add(service, 0x40)))
+            mstore(add(ptr, 0xc0), queueTimeoutSeconds)
+            mstore(add(ptr, 0xe0), requestId)
+            mstore(add(ptr, 0x100), inputCommitment)
+            mstore(add(ptr, 0x120), expiresAt)
+            mstore(0x40, add(ptr, 0x140))
+            structHash := keccak256(ptr, 0x140)
+        }
     }
 
     function _hashStartJobAuthorization(
