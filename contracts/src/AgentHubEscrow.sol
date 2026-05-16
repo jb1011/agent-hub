@@ -73,7 +73,7 @@ contract AgentHubEscrow is ReentrancyGuard, EIP712 {
     error InvalidSignature();
 
     bytes32 public constant CREATE_JOB_AUTHORIZATION_TYPEHASH = keccak256(
-        "CreateJobAuthorization(address user,uint256 providerId,uint256 serviceId,uint256 price,uint256 workTimeout,uint256 queueTimeoutSeconds,bytes32 requestId,bytes32 inputCommitment,uint256 expiresAt)"
+        "CreateJobAuthorization(address user,uint256 providerId,uint256 serviceId,uint256 price,uint64 workTimeout,uint64 queueTimeoutSeconds,bytes32 requestId,bytes32 inputCommitment,uint256 expiresAt)"
     );
     bytes32 public constant START_JOB_AUTHORIZATION_TYPEHASH = keccak256(
         "StartJobAuthorization(uint256 jobId,uint256 providerId,uint256 serviceId,bytes32 inputCommitment,uint256 expiresAt)"
