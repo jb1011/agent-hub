@@ -3,7 +3,9 @@
   "private": true,
   "scripts": {
     "build": "forge build",
-    "deploy": "forge build && ts-node script/deploy.ts"
+    "deploy": "forge build && ts-node script/deploy.ts",
+    "create-job": "forge build && ts-node script/create-job.ts",
+    "register-provider-service": "forge build && ts-node script/register-provider-service.ts"
   },
   "dependencies": {
     "dotenv": "16.4.7",
