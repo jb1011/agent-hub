@@ -3,26 +3,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { ArrowRight, X, Zap, Loader2 } from "lucide-react";
 import NavMenu from "../components/NavMenu";
-import Script from "next/script";
 
 const GRID = "rgba(0,0,0,0.12)";
 const SCREEN_NAME = "agent_hub1";
-const TIMEOUT_MS = 8000;
-
-type TwttrWidgets = {
-  createTimeline: (
-    dataSource: { sourceType: string; screenName: string },
-    element: HTMLElement,
-    options: Record<string, unknown>
-  ) => Promise<HTMLElement | undefined>;
-};
-
-type TwttrWindow = Window & {
-  twttr?: {
-    ready: (cb: (tw: { widgets: TwttrWidgets }) => void) => void;
-    widgets?: TwttrWidgets;
-  };
-};
+const TIMEOUT_MS = 10000;
 
 export default function TwitterPage() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -30,46 +14,77 @@ export default function TwitterPage() {
   const [error, setError] = useState(false);
 
   const buildTimeline = useCallback(() => {
-    const twttr = (window as TwttrWindow).twttr;
-    if (!twttr) {
-      setError(true);
-      return;
-    }
-    // twttr.ready() waits until the widget library is fully initialised —
-    // more reliable than calling widgets directly in onLoad
-    twttr.ready((tw) => {
-      if (!containerRef.current) return;
-      containerRef.current.innerHTML = "";
-      tw.widgets
-        .createTimeline(
-          { sourceType: "profile", screenName: SCREEN_NAME },
-          containerRef.current,
-          {
-            theme: "light",
-            chrome: "noheader nofooter noborders transparent",
-            tweetLimit: 10,
-            lang: "en",
-            dnt: true,
-          }
-        )
-        .then((el) => {
-          if (el) setLoaded(true);
-          else setError(true);
-        })
-        .catch(() => setError(true));
-    });
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Clear previous attempts
+    container.innerHTML = "";
+
+    // Insert the anchor tag that widgets.js looks for
+    const anchor = document.createElement("a");
+    anchor.className = "twitter-timeline";
+    anchor.href = `https://twitter.com/${SCREEN_NAME}`;
+    anchor.setAttribute("data-height", "600");
+    anchor.setAttribute("data-theme", "light");
+    anchor.setAttribute("data-chrome", "noheader nofooter noborders noscrollbar");
+    anchor.setAttribute("data-dnt", "true");
+    anchor.setAttribute("data-lang", "en");
+    anchor.textContent = `Tweets by @${SCREEN_NAME}`;
+    container.appendChild(anchor);
+
+    // Use widgets.load() — simpler and more reliable than createTimeline()
+    const w = window as Window & {
+      twttr?: { widgets?: { load: (el: HTMLElement) => void } };
+    };
+    w.twttr?.widgets?.load(container);
   }, []);
 
-  // Escape hatch: if nothing renders within TIMEOUT_MS, show the error/fallback
+  // MutationObserver: watch for Twitter injecting the <iframe> into the container
+  // This is the only reliable way to know the widget actually rendered
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new MutationObserver(() => {
+      if (container.querySelector("iframe")) {
+        setLoaded(true);
+        observer.disconnect();
+      }
+    });
+    observer.observe(container, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
+  // Timeout escape hatch
   useEffect(() => {
     if (loaded) return;
     const t = setTimeout(() => setError(true), TIMEOUT_MS);
     return () => clearTimeout(t);
   }, [loaded]);
 
-  // widgets.js may already be cached and loaded before this component mounts
+  // Load widgets.js via vanilla <script> — more reliable than Next.js Script
+  // component which can have timing/hydration issues
   useEffect(() => {
-    buildTimeline();
+    const SCRIPT_SRC = "https://platform.twitter.com/widgets.js";
+
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[src="${SCRIPT_SRC}"]`
+    );
+
+    if (existing) {
+      // Already loaded — just process the anchor tag we injected
+      buildTimeline();
+      return;
+    }
+
+    buildTimeline(); // Insert the anchor first so widgets.js finds it on load
+
+    const script = document.createElement("script");
+    script.src = SCRIPT_SRC;
+    script.async = true;
+    script.charset = "utf-8";
+    script.onerror = () => setError(true);
+    document.body.appendChild(script);
   }, [buildTimeline]);
 
   return (
@@ -134,7 +149,7 @@ export default function TwitterPage() {
           </p>
         </div>
 
-        {/* Right: stat cards */}
+        {/* Stat cards */}
         <div className="md:flex-1 grid grid-cols-2 gap-4 w-full md:w-auto">
           {[
             { num: "01", label: "Live feed", desc: "Directly embedded from X, always up to date." },
@@ -210,12 +225,12 @@ export default function TwitterPage() {
           {/* Right: embed */}
           <div className="flex-1 px-6 md:px-10 py-6 md:py-8">
             <div
-              className="relative overflow-hidden min-h-[500px]"
+              className="relative overflow-hidden min-h-[600px]"
               style={{ border: `1px solid ${GRID}` }}
             >
               {/* Loading state */}
               {!loaded && !error && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
                   <Loader2
                     size={24}
                     className="animate-spin"
@@ -232,8 +247,8 @@ export default function TwitterPage() {
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 text-center">
                   <X size={28} className="text-black/20" />
                   <p className="text-sm text-black/50 leading-relaxed max-w-xs">
-                    The X widget could not load — this is common on localhost or
-                    when browser extensions block third-party scripts.
+                    The X embed could not load — usually caused by an ad-blocker
+                    or browser privacy settings.
                   </p>
                   <a
                     href="https://x.com/agent_hub1"
@@ -245,7 +260,11 @@ export default function TwitterPage() {
                     View @agent_hub1 on X <ArrowRight size={12} />
                   </a>
                   <button
-                    onClick={() => { setError(false); buildTimeline(); }}
+                    onClick={() => {
+                      setError(false);
+                      setLoaded(false);
+                      setTimeout(buildTimeline, 100);
+                    }}
                     className="text-xs text-black/30 underline hover:text-black/60 transition-colors"
                   >
                     Try again
@@ -253,7 +272,7 @@ export default function TwitterPage() {
                 </div>
               )}
 
-              {/* Twitter injects the iframe here */}
+              {/* Twitter injects the <iframe> here */}
               <div ref={containerRef} className="w-full" />
             </div>
           </div>
@@ -356,12 +375,6 @@ export default function TwitterPage() {
           © 2026 AgentHub
         </div>
       </footer>
-
-      <Script
-        src="https://platform.twitter.com/widgets.js"
-        strategy="afterInteractive"
-        onLoad={buildTimeline}
-      />
     </div>
   );
 }

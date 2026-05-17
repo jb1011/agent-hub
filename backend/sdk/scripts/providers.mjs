@@ -1,0 +1,102 @@
+/**
+ * Providers — terminal demo
+ *
+ * Usage:
+ *   node examples/providers.mjs [command] [args...]
+ *
+ * Commands:
+ *   list
+ *   get        <provider_id>
+ *   create     <provider_id> <name> <owner_wallet> <payout_wallet> <api_base_url>
+ *   update     <provider_id> <json_patch>
+ *   delete     <provider_id>
+ *
+ * Examples:
+ *   node examples/providers.mjs list
+ *   node examples/providers.mjs get 123
+ *   node examples/providers.mjs create 42 "My Agent" 0xabc 0xabc https://my-agent.xyz
+ *   node examples/providers.mjs update 42 '{"status":"ACTIVE"}'
+ *   node examples/providers.mjs delete 42
+ */
+
+import { SkillHubClient } from "../dist/index.js";
+
+const BASE_URL = process.env.API_URL ?? "http://localhost:3000";
+const client = new SkillHubClient({ baseUrl: BASE_URL });
+
+const [, , command, ...args] = process.argv;
+
+function usage() {
+  console.log(`
+Usage: node examples/providers.mjs <command> [args]
+
+  list
+  get        <provider_id>
+  create     <provider_id> <name> <owner_wallet> <payout_wallet> <api_base_url>
+  update     <provider_id> <json_patch>
+  delete     <provider_id>
+`);
+  process.exit(1);
+}
+
+async function run() {
+  switch (command) {
+    case "list": {
+      const providers = await client.providers.list();
+      console.log(`Found ${providers.length} provider(s):\n`);
+      for (const p of providers) {
+        console.log(`  [${p.provider_id}] ${p.name}  status=${p.status}  trust=${p.trust_level}`);
+      }
+      break;
+    }
+
+    case "get": {
+      const [id] = args;
+      if (!id) usage();
+      const provider = await client.providers.get(id);
+      console.log("\nProvider:");
+      console.log(JSON.stringify(provider, null, 2));
+      break;
+    }
+
+    case "create": {
+      const [provider_id, name, owner_wallet, payout_wallet, api_base_url] = args;
+      if (!provider_id || !name || !owner_wallet || !payout_wallet || !api_base_url) usage();
+      const created = await client.providers.create({
+        provider_id,
+        name,
+        owner_wallet,
+        payout_wallet,
+        api_base_url,
+      });
+      console.log("\nCreated provider:");
+      console.log(JSON.stringify(created, null, 2));
+      break;
+    }
+
+    case "update": {
+      const [id, patch] = args;
+      if (!id || !patch) usage();
+      const updated = await client.providers.update(id, JSON.parse(patch));
+      console.log("\nUpdated provider:");
+      console.log(JSON.stringify(updated, null, 2));
+      break;
+    }
+
+    case "delete": {
+      const [id] = args;
+      if (!id) usage();
+      await client.providers.delete(id);
+      console.log(`\nProvider ${id} deleted.`);
+      break;
+    }
+
+    default:
+      usage();
+  }
+}
+
+run().catch((err) => {
+  console.error("\nError:", err.message);
+  process.exit(1);
+});
