@@ -7,6 +7,7 @@ import swaggerUi from "@fastify/swagger-ui";
 import {
   serializerCompiler,
   validatorCompiler,
+  jsonSchemaTransform,
 } from "@fastify/type-provider-zod";
 import { providersRoutes } from "./routes/providers.js";
 import { servicesRoutes } from "./routes/services.js";
@@ -22,6 +23,7 @@ app.setSerializerCompiler(serializerCompiler);
 await app.register(cors, { origin: true });
 
 await app.register(swagger, {
+  transform: jsonSchemaTransform,
   openapi: {
     openapi: "3.0.0",
     info: {
