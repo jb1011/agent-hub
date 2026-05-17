@@ -4,9 +4,11 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { serializeService } from "../lib/serialize.js";
 import { notFound, sendZodError } from "../lib/http-errors.js";
+import { uint256StringSchema } from "../lib/uint256.js";
 
 const createSchema = z.object({
-  provider_id: z.string().min(1),
+  service_id: uint256StringSchema("service_id"),
+  provider_id: uint256StringSchema("provider_id"),
   name: z.string().min(1),
   description: z.string().optional(),
   service_type: z.string().min(1),
@@ -18,13 +20,18 @@ const createSchema = z.object({
   status: z.enum(["REGISTERED", "ACTIVE", "INACTIVE", "SUSPENDED"]).optional(),
 });
 
-const updateSchema = createSchema.omit({ provider_id: true }).partial();
+const updateSchema = createSchema.omit({ service_id: true, provider_id: true }).partial();
+const idParamsSchema = z.object({ id: uint256StringSchema("service_id") });
 
 export async function servicesRoutes(app: FastifyInstance) {
   app.get("/services", async (req, reply) => {
     const query = z
-      .object({ provider_id: z.string().optional(), status: z.string().optional() })
+      .object({
+        provider_id: uint256StringSchema("provider_id").optional(),
+        status: z.string().optional(),
+      })
       .safeParse(req.query);
+    if (!query.success) return sendZodError(reply, query.error);
     const where = query.success
       ? {
           ...(query.data.provider_id ? { provider_id: query.data.provider_id } : {}),
@@ -39,8 +46,10 @@ export async function servicesRoutes(app: FastifyInstance) {
   });
 
   app.get<{ Params: { id: string } }>("/services/:id", async (req, reply) => {
+    const params = idParamsSchema.safeParse(req.params);
+    if (!params.success) return sendZodError(reply, params.error);
     const service = await prisma.service.findUnique({
-      where: { service_id: req.params.id },
+      where: { service_id: params.data.id },
       include: { provider: true },
     });
     if (!service) return notFound(reply);
@@ -72,14 +81,16 @@ export async function servicesRoutes(app: FastifyInstance) {
   });
 
   app.patch<{ Params: { id: string } }>("/services/:id", async (req, reply) => {
+    const params = idParamsSchema.safeParse(req.params);
+    if (!params.success) return sendZodError(reply, params.error);
     const parsed = updateSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const existing = await prisma.service.findUnique({
-      where: { service_id: req.params.id },
+      where: { service_id: params.data.id },
     });
     if (!existing) return notFound(reply);
     const service = await prisma.service.update({
-      where: { service_id: req.params.id },
+      where: { service_id: params.data.id },
       data: {
         ...parsed.data,
         input_schema: parsed.data.input_schema as Prisma.InputJsonValue ?? undefined,
@@ -90,11 +101,13 @@ export async function servicesRoutes(app: FastifyInstance) {
   });
 
   app.delete<{ Params: { id: string } }>("/services/:id", async (req, reply) => {
+    const params = idParamsSchema.safeParse(req.params);
+    if (!params.success) return sendZodError(reply, params.error);
     const existing = await prisma.service.findUnique({
-      where: { service_id: req.params.id },
+      where: { service_id: params.data.id },
     });
     if (!existing) return notFound(reply);
-    await prisma.service.delete({ where: { service_id: req.params.id } });
+    await prisma.service.delete({ where: { service_id: params.data.id } });
     return reply.status(204).send();
   });
 }

@@ -49,7 +49,7 @@ enum EscrowStatus {
 }
 
 model Provider {
-  provider_id    String         @id @default(cuid())
+  provider_id    String         @id
   name           String
   description    String?
   status         ProviderStatus @default(REGISTERED)
@@ -67,7 +67,7 @@ model Provider {
 }
 
 model Service {
-  service_id      String        @id @default(cuid())
+  service_id      String        @id
   provider_id     String
   provider        Provider      @relation(fields: [provider_id], references: [provider_id], onDelete: Restrict)
   name            String
@@ -88,7 +88,8 @@ model Service {
 }
 
 model Job {
-  job_id          String    @id @default(cuid())
+  request_id      String    @id @default(cuid())
+  job_id          String?   @unique
   user_wallet     String
   service_id      String
   service         Service   @relation(fields: [service_id], references: [service_id], onDelete: Restrict)
@@ -115,8 +116,8 @@ model Job {
 
 model Escrow {
   escrow_id           String       @id @default(cuid())
-  job_id              String       @unique
-  job                 Job          @relation(fields: [job_id], references: [job_id], onDelete: Restrict)
+  request_id          String       @unique
+  job                 Job          @relation(fields: [request_id], references: [request_id], onDelete: Restrict)
   chain_id            Int
   token_address       String
   escrow_contract     String
@@ -131,5 +132,5 @@ model Escrow {
   updated_at          DateTime     @updatedAt
 
   @@index([escrow_status])
-  @@index([job_id])
+  @@index([request_id])
 }

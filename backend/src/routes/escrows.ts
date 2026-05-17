@@ -5,7 +5,7 @@ import { serializeEscrow } from "../lib/serialize.js";
 import { notFound, sendZodError, conflict } from "../lib/http-errors.js";
 
 const createSchema = z.object({
-  job_id: z.string().min(1),
+  request_id: z.string().min(1),
   chain_id: z.number().int().positive(),
   token_address: z.string().min(1),
   escrow_contract: z.string().min(1),
@@ -27,9 +27,11 @@ export async function escrowsRoutes(app: FastifyInstance) {
     return reply.send(serializeEscrow(escrow));
   });
 
-  app.get<{ Params: { job_id: string } }>("/jobs/:job_id/escrow", async (req, reply) => {
-    const escrow = await prisma.escrow.findUnique({
-      where: { job_id: req.params.job_id },
+  app.get<{ Params: { id: string } }>("/jobs/:id/escrow", async (req, reply) => {
+    const escrow = await prisma.escrow.findFirst({
+      where: {
+        OR: [{ request_id: req.params.id }, { job: { job_id: req.params.id } }],
+      },
     });
     if (!escrow) return notFound(reply);
     return reply.send(serializeEscrow(escrow));
@@ -39,11 +41,11 @@ export async function escrowsRoutes(app: FastifyInstance) {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const jobExists = await prisma.job.findUnique({
-      where: { job_id: parsed.data.job_id },
+      where: { request_id: parsed.data.request_id },
     });
     if (!jobExists) return notFound(reply, "job_not_found");
     const existing = await prisma.escrow.findUnique({
-      where: { job_id: parsed.data.job_id },
+      where: { request_id: parsed.data.request_id },
     });
     if (existing) return conflict(reply, "escrow_already_exists_for_job");
     const escrow = await prisma.escrow.create({ data: parsed.data });

@@ -44,6 +44,7 @@ export function serializeService(s: Service) {
 
 export function serializeJob(j: Job) {
   return {
+    request_id: j.request_id,
     job_id: j.job_id,
     user_wallet: j.user_wallet,
     service_id: j.service_id,
@@ -67,7 +68,7 @@ export function serializeJob(j: Job) {
 export function serializeEscrow(e: Escrow) {
   return {
     escrow_id: e.escrow_id,
-    job_id: e.job_id,
+    request_id: e.request_id,
     chain_id: e.chain_id,
     token_address: e.token_address,
     escrow_contract: e.escrow_contract,

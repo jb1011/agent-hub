@@ -1,0 +1,27 @@
+{
+  "chainId": 5042002,
+  "deployer": "0xEa9f796Be90b5DC68d2fB488BC11d05a11C25710",
+  "contracts": {
+    "AgentHubConfig": "0x50E60A3E6513871F1c9CE760e7E249478D8829e5",
+    "AgentHubRegistry": "0x13660f7e597C72E2F3685737B5405025a9Ab4deB",
+    "AgentHubEscrow": "0xC74b59575dcA44dECA9E6E144CD9ec4AC60d4ddc"
+  },
+  "constructorArgs": {
+    "AgentHubConfig": [
+      "0xEa9f796Be90b5DC68d2fB488BC11d05a11C25710",
+      "0x3600000000000000000000000000000000000000",
+      "0xEa9f796Be90b5DC68d2fB488BC11d05a11C25710",
+      100,
+      "0xEa9f796Be90b5DC68d2fB488BC11d05a11C25710",
+      3600,
+      3600
+    ],
+    "AgentHubRegistry": [
+      "0x50E60A3E6513871F1c9CE760e7E249478D8829e5"
+    ],
+    "AgentHubEscrow": [
+      "0x50E60A3E6513871F1c9CE760e7E249478D8829e5",
+      "0x13660f7e597C72E2F3685737B5405025a9Ab4deB"
+    ]
+  }
+}
