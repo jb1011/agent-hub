@@ -136,10 +136,7 @@ export default function AgentsPage() {
 
         <div className="relative flex flex-col md:flex-row">
           {/* Left: description */}
-          <div
-            className="flex flex-col justify-end px-6 md:px-10 pb-8 pt-16 md:pt-0 md:w-[30%] shrink-0"
-            style={{ borderRight: `1px solid ${GRID}` }}
-          >
+          <div className="flex flex-col justify-end px-6 md:px-10 pb-8 pt-16 md:pt-0 md:w-[30%] shrink-0">
             <div className="mb-6">
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-2 h-2" style={{ background: "#E85A00" }} />
@@ -173,10 +170,7 @@ export default function AgentsPage() {
           </div>
 
           {/* Right: count */}
-          <div
-            className="hidden md:flex flex-col justify-between w-[18%] shrink-0 py-8 px-5"
-            style={{ borderLeft: `1px solid ${GRID}` }}
-          >
+          <div className="hidden md:flex flex-col justify-between w-[18%] shrink-0 py-8 px-5">
             <div>
               <div className="text-xs font-semibold tracking-widest uppercase text-black/40 mb-3">
                 Registry

@@ -112,8 +112,27 @@ export default function HomePage() {
           className="relative flex flex-col md:flex-row"
           style={{ minHeight: "inherit" }}
         >
+          {/* Center: headline — first on mobile, second on desktop */}
+          <div className="order-first md:order-2 flex-1 flex flex-col justify-center items-center md:items-start px-4 md:px-8 py-12 md:py-16 overflow-hidden">
+            <h1
+              className="leading-none uppercase text-black select-none text-center md:text-left"
+              style={{
+                fontFamily: "var(--font-bebas-neue), sans-serif",
+                fontSize: "clamp(96px, 22vw, 160px)",
+                letterSpacing: "-0.01em",
+                lineHeight: 0.92,
+              }}
+            >
+              DISCOVER
+              <br />
+              <span className="glitch-text" data-content="AI AGENTS">
+                AI AGENTS
+              </span>
+            </h1>
+          </div>
+
           {/* Left: description + CTA */}
-          <div className="flex flex-col justify-end px-6 md:px-10 pb-8 pt-16 md:pt-0 md:w-[30%] shrink-0">
+          <div className="order-last md:order-1 flex flex-col justify-end px-6 md:px-10 pb-8 pt-4 md:pt-0 md:w-[30%] shrink-0">
             <div className="mb-6">
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-2 h-2" style={{ background: "#E85A00" }} />
@@ -127,32 +146,15 @@ export default function HomePage() {
               </p>
             </div>
             <a href="#directory" className="btn-cyber">
-              Browse Agents
+              <span className="glitch-text-hover" data-content="Browse Agents">
+                Browse Agents
+              </span>
               <ArrowRight size={13} />
             </a>
           </div>
 
-          {/* Center: headline */}
-          <div className="flex-1 flex flex-col justify-center px-4 md:px-8 py-8 md:py-16 overflow-hidden">
-            <h1
-              className="leading-none uppercase text-black select-none"
-              style={{
-                fontFamily: "var(--font-bebas-neue), sans-serif",
-                fontSize: "clamp(64px, 11vw, 160px)",
-                letterSpacing: "-0.01em",
-                lineHeight: 0.92,
-              }}
-            >
-              DISCOVER
-              <br />
-              <span className="glitch-text" data-content="AI AGENTS">
-                AI AGENTS
-              </span>
-            </h1>
-          </div>
-
           {/* Right: live stats */}
-          <div className="hidden md:flex flex-col justify-between w-[18%] shrink-0 py-8 px-5">
+          <div className="hidden md:flex md:order-3 flex-col justify-between w-[18%] shrink-0 py-8 px-5">
             <div className="">
               <div className="pl-5 text-xs font-semibold tracking-widest uppercase text-black/40 mb-3">
                 Live Stats
