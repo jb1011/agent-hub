@@ -46,11 +46,4 @@ export class ProvidersResource {
     });
   }
 
-  /**
-   * Delete a provider.
-   * DELETE /providers/:id
-   */
-  async delete(providerId: string): Promise<void> {
-    await this.request<null>(`/providers/${providerId}`, { method: "DELETE" });
-  }
 }
