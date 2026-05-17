@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Zap, Shield, CheckCircle, Clock } from "lucide-react";
+import { ArrowUpRight, Zap, CheckCircle, Clock } from "lucide-react";
 import NavMenu from "../components/NavMenu";
 import {
   fetchProviders,
@@ -23,7 +23,7 @@ const trustConfig: Record<
   UNVERIFIED: {
     label: "Unverified",
     bg: "transparent",
-    color: "rgba(0,0,0,0.4)",
+    color: "rgba(0,0,0,0.35)",
   },
 };
 
@@ -34,55 +34,75 @@ const trustBorder: Record<string, string> = {
   UNVERIFIED: "1px solid rgba(0,0,0,0.15)",
 };
 
-function TrustIcon({ level }: { level: string }) {
-  if (level === "CERTIFIED" || level === "VERIFIED")
-    return <CheckCircle size={12} className="inline ml-1 opacity-70" />;
-  if (level === "HOSTED")
-    return <Zap size={12} className="inline ml-1 opacity-50" />;
-  return <Clock size={12} className="inline ml-1 opacity-30" />;
+const statusDot: Record<string, string> = {
+  ACTIVE: "#22c55e",
+  REGISTERED: "#E85A00",
+  INACTIVE: "rgba(0,0,0,0.25)",
+  SUSPENDED: "#ef4444",
+};
+
+function TrustBadge({ level }: { level: string }) {
+  const cfg = trustConfig[level] ?? trustConfig.UNVERIFIED;
+  const border = trustBorder[level] ?? trustBorder.UNVERIFIED;
+  const Icon =
+    level === "CERTIFIED" || level === "VERIFIED"
+      ? CheckCircle
+      : level === "HOSTED"
+        ? Zap
+        : Clock;
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 shrink-0"
+      style={{ background: cfg.bg, color: cfg.color, border }}
+    >
+      <Icon size={9} />
+      {cfg.label}
+    </span>
+  );
 }
 
-function SkeletonCard() {
+function SkeletonRow() {
   return (
     <div
-      className="p-7 animate-pulse"
+      className="grid items-center px-6 md:px-10 py-4 gap-4 animate-pulse"
       style={{
-        borderRight: `1px solid ${GRID}`,
+        gridTemplateColumns: "2rem 1fr 10rem 8rem 6rem 6rem",
         borderBottom: `1px solid ${GRID}`,
       }}
     >
-      <div className="w-12 h-12 bg-black/10 mb-5" />
-      <div className="h-3 w-16 bg-black/10 mb-2 rounded" />
-      <div className="h-6 w-40 bg-black/10 mb-3 rounded" />
-      <div className="h-3 w-full bg-black/10 mb-1 rounded" />
-      <div className="h-3 w-2/3 bg-black/10 mb-8 rounded" />
-      <div className="h-3 w-20 bg-black/10 rounded" />
+      <div className="h-3 w-5 bg-black/10 rounded" />
+      <div className="h-4 w-48 bg-black/10 rounded" />
+      <div className="h-3 w-24 bg-black/10 rounded" />
+      <div className="h-3 w-16 bg-black/10 rounded" />
+      <div className="h-3 w-12 bg-black/10 rounded" />
+      <div className="h-3 w-10 bg-black/10 rounded" />
     </div>
   );
 }
 
 export default function AgentsPage() {
-  const {
-    data: providers = [],
-    isLoading,
-    isError,
-  } = useQuery<Provider[]>({
+  const { data: providers = [], isLoading: loadingProviders } = useQuery<
+    Provider[]
+  >({
     queryKey: apiKeys.providers,
     queryFn: fetchProviders,
   });
 
-  const { data: services = [] } = useQuery<Service[]>({
+  const {
+    data: services = [],
+    isLoading: loadingServices,
+    isError,
+  } = useQuery<Service[]>({
     queryKey: apiKeys.services,
     queryFn: fetchServices,
   });
 
-  const serviceCountByProvider = services.reduce<Record<string, number>>(
-    (acc, s) => {
-      acc[s.provider_id] = (acc[s.provider_id] ?? 0) + 1;
-      return acc;
-    },
-    {},
-  );
+  const isLoading = loadingProviders || loadingServices;
+
+  const providerMap = providers.reduce<Record<string, Provider>>((acc, p) => {
+    acc[p.provider_id] = p;
+    return acc;
+  }, {});
 
   return (
     <div
@@ -148,9 +168,7 @@ export default function AgentsPage() {
                 lineHeight: 0.92,
               }}
             >
-              ALL
-              <br />
-              AGENTS
+              ALL AGENTS
             </h1>
           </div>
 
@@ -217,124 +235,140 @@ export default function AgentsPage() {
       >
         <div className="w-2 h-2" style={{ background: "#E85A00" }} />
         <span className="text-xs font-semibold tracking-widest uppercase text-black/50">
-          Registered Providers
+          All Services
         </span>
         <div className="flex-1" />
         {!isLoading && (
           <span className="text-xs text-black/40">
+            {services.length} service{services.length !== 1 ? "s" : ""} ·{" "}
             {providers.length} provider{providers.length !== 1 ? "s" : ""}
           </span>
         )}
       </div>
 
-      {/* ── AGENT GRID ── */}
+      {/* ── TABLE HEADER ── */}
+      <div
+        className="hidden md:grid items-center px-6 md:px-10 py-3 gap-4"
+        style={{
+          gridTemplateColumns: "2rem 1fr 10rem 8rem 6rem 6rem",
+          borderBottom: `1px solid ${GRID}`,
+          background: "rgba(0,0,0,0.03)",
+        }}
+      >
+        {["#", "Service", "Provider", "Type", "Price", "Status"].map((col) => (
+          <span
+            key={col}
+            className="text-[10px] font-bold uppercase tracking-widest text-black/40"
+          >
+            {col}
+          </span>
+        ))}
+      </div>
+
+      {/* ── SERVICE ROWS ── */}
       {isError ? (
         <div
           className="p-12 text-center text-sm text-black/40"
           style={{ borderBottom: `1px solid ${GRID}` }}
         >
-          Failed to load providers. Make sure the backend is running.
+          Failed to load services. Make sure the backend is running.
         </div>
-      ) : (
-        <section
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+      ) : isLoading ? (
+        <section style={{ borderBottom: `1px solid ${GRID}` }}>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <SkeletonRow key={i} />
+          ))}
+        </section>
+      ) : services.length === 0 ? (
+        <div
+          className="p-12 text-center text-sm text-black/40"
           style={{ borderBottom: `1px solid ${GRID}` }}
         >
-          {isLoading ? (
-            Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
-          ) : providers.length === 0 ? (
-            <div className="col-span-3 p-12 text-center text-sm text-black/40">
-              No providers registered yet.
-            </div>
-          ) : (
-            providers.map((provider) => {
-              const cfg =
-                trustConfig[provider.trust_level] ?? trustConfig.UNVERIFIED;
-              const border =
-                trustBorder[provider.trust_level] ?? trustBorder.UNVERIFIED;
-              const serviceCount =
-                serviceCountByProvider[provider.provider_id] ?? 0;
+          No services registered yet.
+        </div>
+      ) : (
+        <section style={{ borderBottom: `1px solid ${GRID}` }}>
+          {services.map((service, i) => {
+            const provider = providerMap[service.provider_id];
+            const dot = statusDot[service.status] ?? statusDot.INACTIVE;
 
-              return (
-                <div
-                  key={provider.provider_id}
-                  className="flex flex-col justify-between p-7 group cursor-pointer transition-colors hover:bg-black/[0.03]"
-                  style={{
-                    borderRight: `1px solid ${GRID}`,
-                    borderBottom: `1px solid ${GRID}`,
-                  }}
-                >
-                  <div>
-                    {/* Avatar + badge row */}
-                    <div className="flex items-start justify-between mb-5">
-                      <div
-                        className="w-12 h-12 flex items-center justify-center text-white text-sm font-bold"
-                        style={{ background: "#0C0C0C" }}
-                      >
-                        {provider.name.slice(0, 2).toUpperCase()}
-                      </div>
-                      <span
-                        className="text-[9px] font-bold uppercase tracking-widest px-2 py-1 flex items-center"
-                        style={{
-                          background: cfg.bg,
-                          color: cfg.color,
-                          border,
-                          letterSpacing: "0.12em",
-                        }}
-                      >
-                        {cfg.label}
-                        <TrustIcon level={provider.trust_level} />
-                      </span>
-                    </div>
+            return (
+              <div
+                key={service.service_id}
+                className="group flex flex-col md:grid items-center px-6 md:px-10 py-4 gap-4 cursor-pointer transition-colors hover:bg-black/[0.025]"
+                style={{
+                  gridTemplateColumns: "2rem 1fr 10rem 8rem 6rem 6rem",
+                  borderBottom: `1px solid ${GRID}`,
+                }}
+              >
+                {/* # */}
+                <span className="hidden md:block text-[11px] font-mono text-black/25 tabular-nums">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
 
-                    {/* Provider name */}
-                    <div className="mb-1">
-                      <span
-                        className="text-[10px] font-bold uppercase tracking-widest"
-                        style={{ color: "#E85A00", letterSpacing: "0.14em" }}
-                      >
-                        Provider
-                      </span>
-                    </div>
-                    <h3
-                      className="font-bold mb-3"
-                      style={{
-                        fontFamily: "var(--font-bebas-neue), sans-serif",
-                        fontSize: "1.6rem",
-                        letterSpacing: "0.04em",
-                      }}
-                    >
-                      {provider.name}
-                    </h3>
-
-                    {/* Provider ID */}
-                    <p className="text-[10px] font-mono text-black/30 mb-4 break-all">
-                      {provider.provider_id}
-                    </p>
-                  </div>
-
-                  {/* Footer row */}
-                  <div
-                    className="flex items-center justify-between pt-4"
-                    style={{ borderTop: `1px solid ${GRID}` }}
-                  >
-                    <span className="text-xs text-black/50">
-                      <span className="font-semibold text-black/70">
-                        {serviceCount}
-                      </span>{" "}
-                      service{serviceCount !== 1 ? "s" : ""}
+                {/* Service name + description */}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-sm text-black truncate">
+                      {service.name}
                     </span>
-                    <button
-                      className="btn-cyber"
-                      style={{ padding: "8px 14px", fontSize: "0.6rem" }}
-                    >
-                      View Services <ArrowRight size={10} />
-                    </button>
+                    <ArrowUpRight
+                      size={13}
+                      className="shrink-0 opacity-0 group-hover:opacity-40 transition-opacity"
+                    />
                   </div>
+                  {service.description && (
+                    <p className="text-[11px] text-black/45 mt-0.5 truncate">
+                      {service.description}
+                    </p>
+                  )}
                 </div>
-              );
-            })
-          )}
+
+                {/* Provider */}
+                <div className="flex flex-col gap-1 min-w-0">
+                  {provider ? (
+                    <>
+                      <span className="text-xs font-medium text-black/70 truncate">
+                        {provider.name}
+                      </span>
+                      <TrustBadge level={provider.trust_level} />
+                    </>
+                  ) : (
+                    <span className="text-xs text-black/30 font-mono truncate">
+                      {service.provider_id.slice(0, 8)}…
+                    </span>
+                  )}
+                </div>
+
+                {/* Type */}
+                <span className="text-[11px] font-mono uppercase tracking-wider text-black/50 truncate">
+                  {service.service_type}
+                </span>
+
+                {/* Price */}
+                <span
+                  className="text-sm font-bold tabular-nums"
+                  style={{ color: "#E85A00" }}
+                >
+                  ${parseFloat(service.price_usdc).toFixed(2)}
+                  <span className="text-[9px] font-normal text-black/35 ml-1">
+                    USDC
+                  </span>
+                </span>
+
+                {/* Status */}
+                <div className="flex items-center gap-1.5">
+                  <div
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ background: dot }}
+                  />
+                  <span className="text-[10px] uppercase tracking-wider text-black/50">
+                    {service.status}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </section>
       )}
 
