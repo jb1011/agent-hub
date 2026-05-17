@@ -7,10 +7,8 @@ const GRID = "rgba(0,0,0,0.12)";
 
 const navLinks = [
   { label: "Agents", href: "/agents" },
-  { label: "Integrations", href: "#" },
-  { label: "Reviews", href: "#" },
-  { label: "Pricing", href: "#" },
-  { label: "Docs", href: "#" },
+  { label: "Feedback", href: "/feedback" },
+  { label: "FAQ", href: "#" },
 ];
 
 export default function NavMenu() {
@@ -41,7 +39,11 @@ export default function NavMenu() {
         {/* Desktop nav links */}
         <div className="hidden md:flex items-center gap-8 text-xs font-medium tracking-wider uppercase text-black/60">
           {navLinks.map((item) => (
-            <a key={item.label} href={item.href} className="hover:text-black transition-colors">
+            <a
+              key={item.label}
+              href={item.href}
+              className="hover:text-black transition-colors"
+            >
               {item.label}
             </a>
           ))}
@@ -77,7 +79,11 @@ export default function NavMenu() {
           style={{ borderBottom: `1px solid ${GRID}`, background: "#E8E8E4" }}
         >
           {navLinks.map((item) => (
-            <a key={item.label} href={item.href} className="text-black/70 hover:text-black">
+            <a
+              key={item.label}
+              href={item.href}
+              className="text-black/70 hover:text-black"
+            >
               {item.label}
             </a>
           ))}
