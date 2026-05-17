@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  --color-accent: #E85A00;
+  --color-accent: #e85a00;
   --color-grid: rgba(0, 0, 0, 0.12);
   --font-body: var(--font-space-grotesk), sans-serif;
   --font-display: var(--font-bebas-neue), sans-serif;
@@ -17,16 +17,146 @@
 
 html,
 body {
-  background-color: #E8E8E4;
-  color: #0C0C0C;
+  background-color: #e8e8e4;
+  color: #0c0c0c;
   font-family: var(--font-space-grotesk), "Space Grotesk", sans-serif;
 }
 
 @utility clip-chamfer {
   clip-path: polygon(
-    10px 0%, calc(100% - 10px) 0%,
-    100% 10px, 100% calc(100% - 10px),
-    calc(100% - 10px) 100%, 10px 100%,
-    0% calc(100% - 10px), 0% 10px
+    10px 0%,
+    calc(100% - 10px) 0%,
+    100% 10px,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    10px 100%,
+    0% calc(100% - 10px),
+    0% 10px
   );
+}
+
+/* ── Cyberpunk buttons ── */
+.btn-cyber,
+.btn-cyber-inverse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  position: relative;
+  cursor: pointer;
+  outline: none;
+  text-decoration: none;
+  font-family: var(--font-space-grotesk), sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  padding: 12px 22px;
+  background-color: #e85a00;
+  color: #0c0c0c;
+  transition: opacity 0.15s;
+}
+
+.btn-cyber:hover,
+.btn-cyber-inverse:hover {
+  opacity: 0.88;
+}
+
+/* bottom-left corner cut */
+.btn-cyber::before,
+.btn-cyber-inverse::before {
+  content: "";
+  width: 22px;
+  height: 22px;
+  position: absolute;
+  bottom: -13px;
+  left: -12px;
+  transform: rotate(45deg);
+  background-color: #e8e8e4; /* match page bg — outer half disappears, inner half cuts the corner */
+}
+
+/* top-right corner cut */
+.btn-cyber::after,
+.btn-cyber-inverse::after {
+  content: "";
+  width: 22px;
+  height: 22px;
+  position: absolute;
+  top: -13px;
+  right: -12px;
+  transform: rotate(45deg);
+  background-color: #e8e8e4;
+}
+
+/* on-dark: orange button sitting on a dark-background section */
+.btn-cyber-on-dark::before {
+  background-color: #0c0c0c;
+}
+
+.btn-cyber-on-dark::after {
+  background-color: #0c0c0c;
+}
+
+/* inverse: dark bg, cream border — for dark-background sections */
+.btn-cyber-inverse {
+  background-color: #0c0c0c;
+  color: #e8e8e4;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.btn-cyber-inverse::before {
+  background-color: #0c0c0c; /* match dark section bg */
+  border-top-color: rgba(255, 255, 255, 0.25);
+}
+
+.btn-cyber-inverse::after {
+  background-color: #0c0c0c;
+  border-bottom-color: rgba(255, 255, 255, 0.25);
+}
+
+@keyframes glitchy {
+  0% {
+    transform: translate(-2px, 2px);
+  }
+  25% {
+    transform: translate(-2px, -2px);
+  }
+  50% {
+    transform: translate(2px, 2px);
+  }
+  75% {
+    transform: translate(2px, -2px);
+  }
+  100% {
+    transform: translate(-2px, 2px);
+  }
+}
+
+.glitch-text {
+  position: relative;
+  display: inline-block;
+  z-index: 0; /* creates stacking context so ::before/::after stay within it */
+}
+
+.glitch-text::before,
+.glitch-text::after {
+  content: attr(data-content);
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.glitch-text::before {
+  color: #00ffff;
+  z-index: -1;
+  animation: glitchy 0.3s ease 0.15s infinite;
+}
+
+.glitch-text::after {
+  color: #e85a00;
+  z-index: -2;
+  animation: glitchy 0.3s ease infinite reverse;
 }

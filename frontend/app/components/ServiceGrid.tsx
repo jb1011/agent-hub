@@ -207,10 +207,7 @@ export function ServiceGrid() {
                           </p>
                         )}
                       </div>
-                      <button
-                        className="text-[10px] font-bold uppercase tracking-widest text-black/70 hover:text-black flex items-center gap-1 transition-colors"
-                        style={{ letterSpacing: "0.12em" }}
-                      >
+                      <button className="btn-cyber" style={{ padding: "8px 14px", fontSize: "0.6rem" }}>
                         Integrate <ArrowRight size={10} />
                       </button>
                     </div>

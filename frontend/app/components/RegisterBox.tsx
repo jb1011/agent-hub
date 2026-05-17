@@ -38,11 +38,7 @@ export function RegisterBox() {
           provider and list your services on Skill Hub.
         </p>
       </div>
-      <button
-        onClick={handleCopy}
-        className="inline-flex items-center gap-2 px-6 py-3.5 text-xs font-bold tracking-widest uppercase text-white transition-opacity hover:opacity-90 shrink-0"
-        style={{ background: "#E85A00", letterSpacing: "0.14em" }}
-      >
+      <button onClick={handleCopy} className="btn-cyber btn-cyber-on-dark shrink-0">
         {copied ? (
           <>
             <Check size={13} />

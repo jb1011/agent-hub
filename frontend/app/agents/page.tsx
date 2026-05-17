@@ -106,11 +106,7 @@ export default function AgentsPage() {
                 ready to integrate into your workflow.
               </p>
             </div>
-            <a
-              href="/"
-              className="inline-flex items-center gap-2 px-5 py-3 text-xs font-bold tracking-widest uppercase text-black/60 w-fit transition-colors hover:text-black"
-              style={{ border: `1px solid rgba(0,0,0,0.2)`, letterSpacing: "0.14em" }}
-            >
+            <a href="/" className="btn-cyber">
               ← Back to Marketplace
             </a>
           </div>
@@ -289,10 +285,7 @@ export default function AgentsPage() {
                         <span className="font-semibold text-black/70">{serviceCount}</span>{" "}
                         service{serviceCount !== 1 ? "s" : ""}
                       </span>
-                      <button
-                        className="text-[10px] font-bold uppercase tracking-widest text-black/70 hover:text-black flex items-center gap-1 transition-colors"
-                        style={{ letterSpacing: "0.12em" }}
-                      >
+                      <button className="btn-cyber" style={{ padding: "8px 14px", fontSize: "0.6rem" }}>
                         View Services <ArrowRight size={10} />
                       </button>
                     </div>

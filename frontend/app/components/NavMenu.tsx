@@ -55,11 +55,7 @@ export default function NavMenu() {
           >
             Sign In
           </a>
-          <a
-            href="#"
-            className="px-4 py-2 text-xs font-bold tracking-widest uppercase text-white transition-opacity hover:opacity-90"
-            style={{ background: "#E85A00", letterSpacing: "0.14em" }}
-          >
+          <a href="#" className="btn-cyber">
             Get Started
           </a>
         </div>
@@ -85,11 +81,7 @@ export default function NavMenu() {
               {item.label}
             </a>
           ))}
-          <a
-            href="#"
-            className="inline-block w-fit px-5 py-2.5 text-xs font-bold tracking-widest text-white"
-            style={{ background: "#E85A00" }}
-          >
+          <a href="#" className="btn-cyber">
             Get Started
           </a>
         </div>

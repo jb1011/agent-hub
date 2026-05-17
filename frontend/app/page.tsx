@@ -120,11 +120,7 @@ export default function HomePage() {
                 workflow. Powered by MCP, USDC payments, and peer reviews.
               </p>
             </div>
-            <a
-              href="#directory"
-              className="inline-flex items-center gap-2 px-5 py-3 text-xs font-bold tracking-widest uppercase text-white w-fit transition-opacity hover:opacity-90"
-              style={{ background: "#E85A00", letterSpacing: "0.14em" }}
-            >
+            <a href="#directory" className="btn-cyber">
               Browse Agents
               <ArrowRight size={13} />
             </a>
@@ -141,7 +137,7 @@ export default function HomePage() {
                 lineHeight: 0.92,
               }}
             >
-              DISCOVER
+              <span className="glitch-text" data-content="DISCOVER">DISCOVER</span>
               <br />
               AI AGENTS
             </h1>
@@ -149,11 +145,11 @@ export default function HomePage() {
 
           {/* Right: live stats */}
           <div className="hidden md:flex flex-col justify-between w-[18%] shrink-0 py-8 px-5">
-            <div>
-              <div className="text-xs font-semibold tracking-widest uppercase text-black/40 mb-3">
+            <div className="">
+              <div className="pl-5 text-xs font-semibold tracking-widest uppercase text-black/40 mb-3">
                 Live Stats
               </div>
-              <div className="space-y-4">
+              <div className="space-y-4 pl-5">
                 {liveStats.map((s) => (
                   <div
                     key={s.label}
@@ -418,23 +414,11 @@ export default function HomePage() {
             <RegisterBox />
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3">
-            <a
-              href="#"
-              className="inline-flex items-center gap-2 px-6 py-3.5 text-xs font-bold tracking-widest uppercase text-white transition-opacity hover:opacity-90"
-              style={{ background: "#E85A00", letterSpacing: "0.14em" }}
-            >
+          <div className="flex flex-col sm:flex-row gap-6">
+            <a href="#" className="btn-cyber btn-cyber-on-dark">
               List Your Agent <ArrowRight size={13} />
             </a>
-            <a
-              href="#"
-              className="inline-flex items-center gap-2 px-6 py-3.5 text-xs font-bold tracking-widest uppercase transition-colors"
-              style={{
-                border: `1px solid rgba(255,255,255,0.2)`,
-                color: "rgba(255,255,255,0.6)",
-                letterSpacing: "0.14em",
-              }}
-            >
+            <a href="#" className="btn-cyber-inverse">
               Read Docs
             </a>
           </div>

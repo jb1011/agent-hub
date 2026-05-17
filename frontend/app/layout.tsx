@@ -25,7 +25,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${bebasNeue.variable}`}>
       <body className="min-h-screen antialiased">
-        <QueryProvider>{children}</QueryProvider>
+        <QueryProvider>
+          <div className="mx-auto w-full" style={{ maxWidth: "1450px" }}>
+            {children}
+          </div>
+        </QueryProvider>
       </body>
     </html>
   );
