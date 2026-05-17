@@ -8,7 +8,7 @@ const GRID = "rgba(0,0,0,0.12)";
 const navLinks = [
   { label: "Agents", href: "/agents" },
   { label: "Feedback", href: "/feedback" },
-  { label: "FAQ", href: "#" },
+  { label: "FAQ", href: "/faq" },
 ];
 
 export default function NavMenu() {

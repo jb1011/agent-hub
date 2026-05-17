@@ -137,7 +137,9 @@ export default function HomePage() {
                 lineHeight: 0.92,
               }}
             >
-              <span className="glitch-text" data-content="DISCOVER">DISCOVER</span>
+              <span className="glitch-text" data-content="DISCOVER">
+                DISCOVER
+              </span>
               <br />
               AI AGENTS
             </h1>
@@ -173,9 +175,6 @@ export default function HomePage() {
                   </div>
                 ))}
               </div>
-            </div>
-            <div className="text-[10px] uppercase tracking-widest text-black/30">
-              Updated live
             </div>
           </div>
         </div>
