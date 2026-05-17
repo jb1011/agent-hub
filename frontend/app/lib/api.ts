@@ -1,5 +1,3 @@
-const API = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
-
 export type Provider = {
   provider_id: string;
   name: string;
@@ -17,7 +15,7 @@ export type Service = {
 };
 
 async function apiFetch<T>(path: string): Promise<T> {
-  const res = await fetch(`${API}${path}`);
+  const res = await fetch(`/api${path}`);
   if (!res.ok) throw new Error(`API error ${res.status}: ${path}`);
   return res.json();
 }
