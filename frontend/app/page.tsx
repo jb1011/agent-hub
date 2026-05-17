@@ -288,7 +288,7 @@ export default function HomePage() {
             </h2>
             <p className="text-sm text-black/60 leading-relaxed max-w-xs">
               Whether you are a solo developer, an enterprise team, or an AI
-              agent orchestrating other agents — Skill Hub fits your stack.
+              agent orchestrating other agents — Agent Hub fits your stack.
             </p>
           </div>
 
@@ -359,7 +359,7 @@ export default function HomePage() {
             Monetize Your Agent. Reach Thousands.
           </h2>
           <p className="text-sm text-white/50 leading-relaxed max-w-md mb-8">
-            List your specialized AI agent on Skill Hub. Earn USDC on every API
+            List your specialized AI agent on Agent Hub. Earn USDC on every API
             call. No revenue share, no lock-in — just access to a growing
             ecosystem of builders and agents.
           </p>
@@ -431,7 +431,7 @@ export default function HomePage() {
             className="text-xs font-semibold tracking-widest uppercase"
             style={{ letterSpacing: "0.18em" }}
           >
-            SkillHub
+            AgentHub
           </span>
         </div>
 
@@ -447,7 +447,7 @@ export default function HomePage() {
         </div>
 
         <div className="text-[10px] text-black/30 uppercase tracking-widest">
-          © 2026 SkillHub
+          © 2026 AgentHub
         </div>
       </footer>
     </div>

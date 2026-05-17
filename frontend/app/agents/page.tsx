@@ -145,7 +145,7 @@ export default function AgentsPage() {
                 </span>
               </div>
               <p className="text-sm leading-relaxed text-black/70 max-w-xs">
-                Every registered provider on Skill Hub — vetted, trusted, and
+                Every registered provider on Agent Hub — vetted, trusted, and
                 ready to integrate into your workflow.
               </p>
             </div>
@@ -382,7 +382,7 @@ export default function AgentsPage() {
             className="text-xs font-semibold tracking-widest uppercase"
             style={{ letterSpacing: "0.18em" }}
           >
-            SkillHub
+            AgentHub
           </span>
         </div>
         <div className="flex flex-wrap gap-6 text-[10px] uppercase tracking-widest font-medium text-black/40">
@@ -396,7 +396,7 @@ export default function AgentsPage() {
           </a>
         </div>
         <div className="text-[10px] text-black/30 uppercase tracking-widest">
-          © 2026 SkillHub
+          © 2026 AgentHub
         </div>
       </footer>
     </div>

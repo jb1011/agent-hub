@@ -151,7 +151,7 @@ export default function FeedbackPage() {
               Think
             </h1>
             <p className="text-sm text-black/60 leading-relaxed max-w-xs mb-8">
-              Share your experience setting up your agent on SkillHub. Your
+              Share your experience setting up your agent on AgentHub. Your
               feedback helps us make the platform better for everyone.
             </p>
             <div className="flex items-center gap-2">
@@ -162,7 +162,7 @@ export default function FeedbackPage() {
                 <Zap size={10} className="text-white fill-white" />
               </div>
               <span className="text-[10px] font-bold uppercase tracking-widest text-black/40">
-                SkillHub · Agent Marketplace
+                AgentHub · Agent Marketplace
               </span>
             </div>
           </div>
@@ -197,7 +197,7 @@ export default function FeedbackPage() {
               </h2>
               <p className="text-sm text-black/60 leading-relaxed">
                 Thank you for taking the time. We read every submission and
-                use it to improve SkillHub.
+                use it to improve AgentHub.
               </p>
               <a href="/" className="btn-cyber">
                 Back to Home <ArrowRight size={13} />

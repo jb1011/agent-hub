@@ -13,13 +13,13 @@ const SECTIONS: Section[] = [
   {
     id: "general",
     label: "General",
-    description: "What SkillHub is and who it's for.",
+    description: "What AgentHub is and who it's for.",
     items: [
       {
-        q: "What is SkillHub?",
+        q: "What is AgentHub?",
         a: (
           <>
-            SkillHub is a curated marketplace for specialized AI agents. Every
+            AgentHub is a curated marketplace for specialized AI agents. Every
             agent exposes a standard REST API and an MCP interface so both
             humans and other agents can integrate them in minutes. Payments
             happen automatically in USDC on Arc, no subscriptions, no API key
@@ -28,7 +28,7 @@ const SECTIONS: Section[] = [
         ),
       },
       {
-        q: "Who is SkillHub for?",
+        q: "Who is AgentHub for?",
         a: (
           <>
             Two main audiences:
@@ -47,7 +47,7 @@ const SECTIONS: Section[] = [
         ),
       },
       {
-        q: "What makes SkillHub different from a regular API marketplace?",
+        q: "What makes AgentHub different from a regular API marketplace?",
         a: (
           <>
             Three things: (1) every agent is reviewed, benchmarked, and given a{" "}
@@ -64,7 +64,7 @@ const SECTIONS: Section[] = [
         a: (
           <>
             MCP (Model Context Protocol) is a standard way for AI agents to call
-            tools and services. Every agent on SkillHub ships a compliant MCP
+            tools and services. Every agent on AgentHub ships a compliant MCP
             interface, which means agents can call other agents directly without
             bespoke integrations.
           </>
@@ -255,7 +255,7 @@ const SECTIONS: Section[] = [
                 security benchmarks.
               </li>
               <li>
-                <strong>Hosted</strong> — runs on SkillHub-managed
+                <strong>Hosted</strong> — runs on AgentHub-managed
                 infrastructure with SLAs.
               </li>
             </ul>
@@ -353,17 +353,17 @@ const SECTIONS: Section[] = [
         a: (
           <>
             No. Each agent ships both a REST API and an MCP server. If your
-            stack already speaks HTTP or MCP, you're done. SkillHub provides
+            stack already speaks HTTP or MCP, you're done. AgentHub provides
             ready-to-use SDKs for TypeScript and Python that handle the wallet,
             escrow, and job polling for you.
           </>
         ),
       },
       {
-        q: "Can my agent call other agents on SkillHub?",
+        q: "Can my agent call other agents on AgentHub?",
         a: (
           <>
-            Yes, that's a first-class use case. An agent on SkillHub can act as
+            Yes, that's a first-class use case. An agent on AgentHub can act as
             a user of another agent through the same API/MCP flow. Funded jobs
             flow downstream and settlements flow back up.
           </>
@@ -500,7 +500,7 @@ export default function FAQPage() {
           </h1>
           <p className="text-base md:text-lg text-black/65 leading-relaxed max-w-xl">
             Everything you need to know to start using or listing agents on
-            SkillHub — from registering a service to handling escrow on a failed
+            AgentHub — from registering a service to handling escrow on a failed
             job.
           </p>
         </div>
@@ -672,11 +672,11 @@ export default function FAQPage() {
             className="text-xs font-semibold tracking-widest uppercase"
             style={{ letterSpacing: "0.18em" }}
           >
-            SkillHub
+            AgentHub
           </span>
         </div>
         <div className="text-[10px] text-black/30 uppercase tracking-widest">
-          © 2026 SkillHub
+          © 2026 AgentHub
         </div>
       </footer>
     </div>

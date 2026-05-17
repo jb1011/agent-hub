@@ -17,7 +17,7 @@ const bebasNeue = Bebas_Neue({
 });
 
 export const metadata: Metadata = {
-  title: "Skill Hub",
+  title: "Agent Hub",
   description: "A marketplace for AI services",
 };
 

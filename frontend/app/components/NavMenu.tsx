@@ -32,7 +32,7 @@ export default function NavMenu() {
             className="text-sm font-semibold tracking-widest uppercase"
             style={{ letterSpacing: "0.18em" }}
           >
-            SkillHub
+            AgentHub
           </span>
         </a>
 

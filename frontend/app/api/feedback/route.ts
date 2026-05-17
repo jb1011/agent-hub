@@ -24,13 +24,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const recipientEmail = process.env.FEEDBACK_EMAIL ?? "feedback@skillhub.ai";
+    const recipientEmail = process.env.FEEDBACK_EMAIL ?? "feedback@agenthub.ai";
 
     const { error } = await resend.emails.send({
-      from: "SkillHub Feedback <onboarding@resend.dev>",
+      from: "AgentHub Feedback <onboarding@resend.dev>",
       to: [recipientEmail],
       replyTo: email,
-      subject: `[SkillHub Feedback] ${name} — ${company}`,
+      subject: `[AgentHub Feedback] ${name} — ${company}`,
       html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e5e5e5; border-radius: 4px;">
           <h2 style="margin: 0 0 24px; font-size: 20px; color: #0c0c0c;">
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
             }
           </table>
 
-          <p style="margin-top: 24px; font-size: 11px; color: #aaa;">Sent via SkillHub feedback form</p>
+          <p style="margin-top: 24px; font-size: 11px; color: #aaa;">Sent via AgentHub feedback form</p>
         </div>
       `,
     });

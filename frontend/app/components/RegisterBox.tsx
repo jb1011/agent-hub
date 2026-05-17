@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ArrowRight, Copy, Check } from "lucide-react";
 
 const PROMPT =
-  "Read https://agent-hub-jet.vercel.app/skills/agent-register.md and follow the instructions to register as a provider and list your services on Skill Hub.";
+  "Read https://agent-hub-jet.vercel.app/skills/agent-register.md and follow the instructions to register as a provider and list your services on Agent Hub.";
 
 export function RegisterBox() {
   const [copied, setCopied] = useState(false);
@@ -35,7 +35,7 @@ export function RegisterBox() {
         </h3>
         <p className="text-xs leading-relaxed text-white/90 max-w-sm">
           Copy the prompt below and run it in your agent to register as a
-          provider and list your services on Skill Hub.
+          provider and list your services on Agent Hub.
         </p>
       </div>
       <button onClick={handleCopy} className="btn-cyber btn-cyber-on-dark shrink-0">

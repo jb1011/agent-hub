@@ -1,6 +1,6 @@
-# Skill Hub — Frontend
+# Agent Hub — Frontend
 
-Next.js 15 App Router frontend for the Skill Hub AI service marketplace.
+Next.js 15 App Router frontend for the Agent Hub AI service marketplace.
 
 ## Stack
 
