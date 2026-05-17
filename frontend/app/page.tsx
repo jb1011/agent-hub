@@ -88,7 +88,10 @@ export default function HomePage() {
       {/* ── HERO ── */}
       <section
         className="relative overflow-hidden"
-        style={{ borderBottom: `1px solid ${GRID}` }}
+        style={{
+          borderBottom: `1px solid ${GRID}`,
+          minHeight: "calc(100dvh - 56px)",
+        }}
       >
         {/* Vertical grid lines */}
         <div
@@ -105,7 +108,10 @@ export default function HomePage() {
 
         <div className="absolute left-0 right-0" />
 
-        <div className="relative flex flex-col md:flex-row">
+        <div
+          className="relative flex flex-col md:flex-row"
+          style={{ minHeight: "inherit" }}
+        >
           {/* Left: description + CTA */}
           <div className="flex flex-col justify-end px-6 md:px-10 pb-8 pt-16 md:pt-0 md:w-[30%] shrink-0">
             <div className="mb-6">
@@ -137,11 +143,11 @@ export default function HomePage() {
                 lineHeight: 0.92,
               }}
             >
-              <span className="glitch-text" data-content="DISCOVER">
-                DISCOVER
-              </span>
+              DISCOVER
               <br />
-              AI AGENTS
+              <span className="glitch-text" data-content="AI AGENTS">
+                AI AGENTS
+              </span>
             </h1>
           </div>
 
@@ -181,7 +187,7 @@ export default function HomePage() {
       </section>
 
       {/* ── SECTION LABEL ── */}
-      <div
+      {/* <div
         className="flex items-center gap-3 px-6 md:px-10 py-4"
         style={{ borderBottom: `1px solid ${GRID}` }}
       >
@@ -194,12 +200,12 @@ export default function HomePage() {
           <Search size={11} />
           <span className="hidden sm:inline">Search agents...</span>
         </div>
-      </div>
+      </div> */}
 
       {/* ── SERVICE GRID ── */}
-      <div id="directory">
+      {/* <div id="directory">
         <ServiceGrid />
-      </div>
+      </div> */}
 
       {/* ── HOW IT WORKS ── */}
       <section style={{ borderBottom: `1px solid ${GRID}` }}>
@@ -328,54 +334,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── PARTNERS ── */}
-      <section
-        className="flex flex-col sm:flex-row items-center"
-        style={{ borderBottom: `1px solid ${GRID}` }}
-      >
-        <div
-          className="px-6 md:px-10 py-5 shrink-0 w-full sm:w-auto"
-          style={{ borderRight: `1px solid ${GRID}` }}
-        >
-          <span className="text-[10px] font-bold uppercase tracking-widest text-black/40">
-            Our Partners:
-          </span>
-        </div>
-        <div className="flex items-center overflow-x-auto flex-1">
-          {partners.map((p, i) => (
-            <div
-              key={p}
-              className="shrink-0 px-6 md:px-10 py-5 text-xs font-bold uppercase tracking-widest text-black/40 hover:text-black/70 transition-colors cursor-pointer"
-              style={{
-                borderRight:
-                  i < partners.length - 1 ? `1px solid ${GRID}` : undefined,
-              }}
-            >
-              {p}
-            </div>
-          ))}
-        </div>
-        <div
-          className="hidden md:flex items-center"
-          style={{ borderLeft: `1px solid ${GRID}` }}
-        >
-          <button
-            className="px-4 py-5 hover:bg-black/5 transition-colors"
-            style={{ borderRight: `1px solid ${GRID}` }}
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <button className="px-4 py-5 hover:bg-black/5 transition-colors">
-            <ChevronRight size={14} />
-          </button>
-        </div>
-      </section>
-
-      {/* ── CTA BANNER ── */}
-      <section
-        className="relative overflow-hidden flex flex-col md:flex-row items-stretch"
-        style={{ borderBottom: `1px solid ${GRID}` }}
-      >
+      <section className="relative overflow-hidden flex flex-col md:flex-row items-stretch">
         <div
           className="flex-1 px-6 md:px-10 py-12 md:py-16"
           style={{ background: "#0C0C0C" }}
@@ -411,15 +370,6 @@ export default function HomePage() {
             }}
           >
             <RegisterBox />
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-6">
-            <a href="#" className="btn-cyber btn-cyber-on-dark">
-              List Your Agent <ArrowRight size={13} />
-            </a>
-            <a href="#" className="btn-cyber-inverse">
-              Read Docs
-            </a>
           </div>
         </div>
 
@@ -484,15 +434,14 @@ export default function HomePage() {
         </div>
 
         <div className="flex flex-wrap gap-6 text-[10px] uppercase tracking-widest font-medium text-black/40">
-          {["Privacy", "Terms", "Docs", "Status", "GitHub"].map((link) => (
-            <a
-              key={link}
-              href="#"
-              className="hover:text-black transition-colors"
-            >
-              {link}
-            </a>
-          ))}
+          <a
+            href="https://github.com/jb1011/agent-hub"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-black transition-colors"
+          >
+            GitHub
+          </a>
         </div>
 
         <div className="text-[10px] text-black/30 uppercase tracking-widest">

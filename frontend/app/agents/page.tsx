@@ -3,22 +3,35 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Zap, Shield, CheckCircle, Clock } from "lucide-react";
 import NavMenu from "../components/NavMenu";
-import { fetchProviders, fetchServices, apiKeys, type Provider, type Service } from "../lib/api";
+import {
+  fetchProviders,
+  fetchServices,
+  apiKeys,
+  type Provider,
+  type Service,
+} from "../lib/api";
 
 const GRID = "rgba(0,0,0,0.12)";
 
-const trustConfig: Record<string, { label: string; bg: string; color: string }> = {
+const trustConfig: Record<
+  string,
+  { label: string; bg: string; color: string }
+> = {
   CERTIFIED: { label: "Certified", bg: "#0C0C0C", color: "#fff" },
-  VERIFIED:  { label: "Verified",  bg: "#E85A00", color: "#fff" },
-  HOSTED:    { label: "Hosted",    bg: "transparent", color: "#0C0C0C" },
-  UNVERIFIED:{ label: "Unverified",bg: "transparent", color: "rgba(0,0,0,0.4)" },
+  VERIFIED: { label: "Verified", bg: "#E85A00", color: "#fff" },
+  HOSTED: { label: "Hosted", bg: "transparent", color: "#0C0C0C" },
+  UNVERIFIED: {
+    label: "Unverified",
+    bg: "transparent",
+    color: "rgba(0,0,0,0.4)",
+  },
 };
 
 const trustBorder: Record<string, string> = {
   CERTIFIED: "none",
-  VERIFIED:  "none",
-  HOSTED:    "1px solid rgba(0,0,0,0.25)",
-  UNVERIFIED:"1px solid rgba(0,0,0,0.15)",
+  VERIFIED: "none",
+  HOSTED: "1px solid rgba(0,0,0,0.25)",
+  UNVERIFIED: "1px solid rgba(0,0,0,0.15)",
 };
 
 function TrustIcon({ level }: { level: string }) {
@@ -33,7 +46,10 @@ function SkeletonCard() {
   return (
     <div
       className="p-7 animate-pulse"
-      style={{ borderRight: `1px solid ${GRID}`, borderBottom: `1px solid ${GRID}` }}
+      style={{
+        borderRight: `1px solid ${GRID}`,
+        borderBottom: `1px solid ${GRID}`,
+      }}
     >
       <div className="w-12 h-12 bg-black/10 mb-5" />
       <div className="h-3 w-16 bg-black/10 mb-2 rounded" />
@@ -46,7 +62,11 @@ function SkeletonCard() {
 }
 
 export default function AgentsPage() {
-  const { data: providers = [], isLoading, isError } = useQuery<Provider[]>({
+  const {
+    data: providers = [],
+    isLoading,
+    isError,
+  } = useQuery<Provider[]>({
     queryKey: apiKeys.providers,
     queryFn: fetchProviders,
   });
@@ -56,10 +76,13 @@ export default function AgentsPage() {
     queryFn: fetchServices,
   });
 
-  const serviceCountByProvider = services.reduce<Record<string, number>>((acc, s) => {
-    acc[s.provider_id] = (acc[s.provider_id] ?? 0) + 1;
-    return acc;
-  }, {});
+  const serviceCountByProvider = services.reduce<Record<string, number>>(
+    (acc, s) => {
+      acc[s.provider_id] = (acc[s.provider_id] ?? 0) + 1;
+      return acc;
+    },
+    {},
+  );
 
   return (
     <div
@@ -84,7 +107,10 @@ export default function AgentsPage() {
           style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)" }}
         >
           {[...Array(5)].map((_, i) => (
-            <div key={i} style={{ gridColumn: i + 2, borderLeft: `1px solid ${GRID}` }} />
+            <div
+              key={i}
+              style={{ gridColumn: i + 2, borderLeft: `1px solid ${GRID}` }}
+            />
           ))}
         </div>
 
@@ -138,7 +164,10 @@ export default function AgentsPage() {
                 Registry
               </div>
               <div
-                style={{ borderBottom: `1px solid ${GRID}`, paddingBottom: "12px" }}
+                style={{
+                  borderBottom: `1px solid ${GRID}`,
+                  paddingBottom: "12px",
+                }}
               >
                 <div className="text-[10px] uppercase tracking-widest text-black/40">
                   Total Providers
@@ -153,7 +182,13 @@ export default function AgentsPage() {
                   {isLoading ? "—" : providers.length}
                 </div>
               </div>
-              <div className="mt-4" style={{ borderBottom: `1px solid ${GRID}`, paddingBottom: "12px" }}>
+              <div
+                className="mt-4"
+                style={{
+                  borderBottom: `1px solid ${GRID}`,
+                  paddingBottom: "12px",
+                }}
+              >
                 <div className="text-[10px] uppercase tracking-widest text-black/40">
                   Total Services
                 </div>
@@ -205,93 +240,101 @@ export default function AgentsPage() {
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
           style={{ borderBottom: `1px solid ${GRID}` }}
         >
-          {isLoading
-            ? Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
-            : providers.length === 0
-            ? (
-              <div className="col-span-3 p-12 text-center text-sm text-black/40">
-                No providers registered yet.
-              </div>
-            )
-            : providers.map((provider) => {
-                const cfg = trustConfig[provider.trust_level] ?? trustConfig.UNVERIFIED;
-                const border = trustBorder[provider.trust_level] ?? trustBorder.UNVERIFIED;
-                const serviceCount = serviceCountByProvider[provider.provider_id] ?? 0;
+          {isLoading ? (
+            Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
+          ) : providers.length === 0 ? (
+            <div className="col-span-3 p-12 text-center text-sm text-black/40">
+              No providers registered yet.
+            </div>
+          ) : (
+            providers.map((provider) => {
+              const cfg =
+                trustConfig[provider.trust_level] ?? trustConfig.UNVERIFIED;
+              const border =
+                trustBorder[provider.trust_level] ?? trustBorder.UNVERIFIED;
+              const serviceCount =
+                serviceCountByProvider[provider.provider_id] ?? 0;
 
-                return (
-                  <div
-                    key={provider.provider_id}
-                    className="flex flex-col justify-between p-7 group cursor-pointer transition-colors hover:bg-black/[0.03]"
-                    style={{
-                      borderRight: `1px solid ${GRID}`,
-                      borderBottom: `1px solid ${GRID}`,
-                    }}
-                  >
-                    <div>
-                      {/* Avatar + badge row */}
-                      <div className="flex items-start justify-between mb-5">
-                        <div
-                          className="w-12 h-12 flex items-center justify-center text-white text-sm font-bold"
-                          style={{ background: "#0C0C0C" }}
-                        >
-                          {provider.name.slice(0, 2).toUpperCase()}
-                        </div>
-                        <span
-                          className="text-[9px] font-bold uppercase tracking-widest px-2 py-1 flex items-center"
-                          style={{
-                            background: cfg.bg,
-                            color: cfg.color,
-                            border,
-                            letterSpacing: "0.12em",
-                          }}
-                        >
-                          {cfg.label}
-                          <TrustIcon level={provider.trust_level} />
-                        </span>
+              return (
+                <div
+                  key={provider.provider_id}
+                  className="flex flex-col justify-between p-7 group cursor-pointer transition-colors hover:bg-black/[0.03]"
+                  style={{
+                    borderRight: `1px solid ${GRID}`,
+                    borderBottom: `1px solid ${GRID}`,
+                  }}
+                >
+                  <div>
+                    {/* Avatar + badge row */}
+                    <div className="flex items-start justify-between mb-5">
+                      <div
+                        className="w-12 h-12 flex items-center justify-center text-white text-sm font-bold"
+                        style={{ background: "#0C0C0C" }}
+                      >
+                        {provider.name.slice(0, 2).toUpperCase()}
                       </div>
-
-                      {/* Provider name */}
-                      <div className="mb-1">
-                        <span
-                          className="text-[10px] font-bold uppercase tracking-widest"
-                          style={{ color: "#E85A00", letterSpacing: "0.14em" }}
-                        >
-                          Provider
-                        </span>
-                      </div>
-                      <h3
-                        className="font-bold mb-3"
+                      <span
+                        className="text-[9px] font-bold uppercase tracking-widest px-2 py-1 flex items-center"
                         style={{
-                          fontFamily: "var(--font-bebas-neue), sans-serif",
-                          fontSize: "1.6rem",
-                          letterSpacing: "0.04em",
+                          background: cfg.bg,
+                          color: cfg.color,
+                          border,
+                          letterSpacing: "0.12em",
                         }}
                       >
-                        {provider.name}
-                      </h3>
-
-                      {/* Provider ID */}
-                      <p className="text-[10px] font-mono text-black/30 mb-4 break-all">
-                        {provider.provider_id}
-                      </p>
-                    </div>
-
-                    {/* Footer row */}
-                    <div
-                      className="flex items-center justify-between pt-4"
-                      style={{ borderTop: `1px solid ${GRID}` }}
-                    >
-                      <span className="text-xs text-black/50">
-                        <span className="font-semibold text-black/70">{serviceCount}</span>{" "}
-                        service{serviceCount !== 1 ? "s" : ""}
+                        {cfg.label}
+                        <TrustIcon level={provider.trust_level} />
                       </span>
-                      <button className="btn-cyber" style={{ padding: "8px 14px", fontSize: "0.6rem" }}>
-                        View Services <ArrowRight size={10} />
-                      </button>
                     </div>
+
+                    {/* Provider name */}
+                    <div className="mb-1">
+                      <span
+                        className="text-[10px] font-bold uppercase tracking-widest"
+                        style={{ color: "#E85A00", letterSpacing: "0.14em" }}
+                      >
+                        Provider
+                      </span>
+                    </div>
+                    <h3
+                      className="font-bold mb-3"
+                      style={{
+                        fontFamily: "var(--font-bebas-neue), sans-serif",
+                        fontSize: "1.6rem",
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      {provider.name}
+                    </h3>
+
+                    {/* Provider ID */}
+                    <p className="text-[10px] font-mono text-black/30 mb-4 break-all">
+                      {provider.provider_id}
+                    </p>
                   </div>
-                );
-              })}
+
+                  {/* Footer row */}
+                  <div
+                    className="flex items-center justify-between pt-4"
+                    style={{ borderTop: `1px solid ${GRID}` }}
+                  >
+                    <span className="text-xs text-black/50">
+                      <span className="font-semibold text-black/70">
+                        {serviceCount}
+                      </span>{" "}
+                      service{serviceCount !== 1 ? "s" : ""}
+                    </span>
+                    <button
+                      className="btn-cyber"
+                      style={{ padding: "8px 14px", fontSize: "0.6rem" }}
+                    >
+                      View Services <ArrowRight size={10} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </section>
       )}
 
@@ -315,11 +358,14 @@ export default function AgentsPage() {
           </span>
         </div>
         <div className="flex flex-wrap gap-6 text-[10px] uppercase tracking-widest font-medium text-black/40">
-          {["Privacy", "Terms", "Docs", "Status", "GitHub"].map((link) => (
-            <a key={link} href="#" className="hover:text-black transition-colors">
-              {link}
-            </a>
-          ))}
+          <a
+            href="https://github.com/jb1011/agent-hub"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-black transition-colors"
+          >
+            GitHub
+          </a>
         </div>
         <div className="text-[10px] text-black/30 uppercase tracking-widest">
           © 2026 SkillHub
