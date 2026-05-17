@@ -19,6 +19,9 @@ const bebasNeue = Bebas_Neue({
 export const metadata: Metadata = {
   title: "Agent Hub",
   description: "A marketplace for AI services",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
