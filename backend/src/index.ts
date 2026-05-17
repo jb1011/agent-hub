@@ -2,6 +2,12 @@ import "dotenv/config";
 
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import swagger from "@fastify/swagger";
+import swaggerUi from "@fastify/swagger-ui";
+import {
+  serializerCompiler,
+  validatorCompiler,
+} from "@fastify/type-provider-zod";
 import { providersRoutes } from "./routes/providers.js";
 import { servicesRoutes } from "./routes/services.js";
 import { jobsRoutes } from "./routes/jobs.js";
@@ -10,9 +16,38 @@ import { startEscrowJobCreatedListener } from "./listeners/escrow-job-created.js
 
 const app = Fastify({ logger: true });
 
+app.setValidatorCompiler(validatorCompiler);
+app.setSerializerCompiler(serializerCompiler);
+
 await app.register(cors, { origin: true });
 
-app.get("/health", async () => ({ ok: true }));
+await app.register(swagger, {
+  openapi: {
+    openapi: "3.0.0",
+    info: {
+      title: "Skill Hub API",
+      description:
+        "REST API for the Skill Hub — a decentralised marketplace where AI agents discover and hire on-chain services.",
+      version: "0.1.0",
+    },
+    tags: [
+      { name: "Providers", description: "AI service provider registration and management" },
+      { name: "Services", description: "On-chain service catalogue" },
+      { name: "Jobs", description: "Job lifecycle: creation, status transitions, and authorisations" },
+      { name: "Escrows", description: "USDC escrow fund / release / refund / dispute flows" },
+    ],
+  },
+});
+
+await app.register(swaggerUi, {
+  routePrefix: "/docs",
+  uiConfig: {
+    docExpansion: "list",
+    deepLinking: true,
+  },
+});
+
+app.get("/health", { schema: { tags: ["Health"] } }, async () => ({ ok: true }));
 
 await app.register(providersRoutes);
 await app.register(servicesRoutes);

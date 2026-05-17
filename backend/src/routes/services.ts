@@ -21,16 +21,42 @@ const createSchema = z.object({
 });
 
 const updateSchema = createSchema.omit({ service_id: true, provider_id: true }).partial();
-const idParamsSchema = z.object({ id: uint256StringSchema("service_id") });
+
+const idParamsSchema = z.object({
+  id: uint256StringSchema("service_id"),
+});
+
+const serviceResponseSchema = z.object({
+  service_id: z.string(),
+  provider_id: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  service_type: z.string(),
+  endpoint_path: z.string(),
+  input_schema: z.unknown().nullable(),
+  output_schema: z.unknown().nullable(),
+  price_usdc: z.string(),
+  timeout_seconds: z.number().nullable(),
+  status: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+const listQuerySchema = z.object({
+  provider_id: uint256StringSchema("provider_id").optional(),
+  status: z.string().optional(),
+});
 
 export async function servicesRoutes(app: FastifyInstance) {
-  app.get("/services", async (req, reply) => {
-    const query = z
-      .object({
-        provider_id: uint256StringSchema("provider_id").optional(),
-        status: z.string().optional(),
-      })
-      .safeParse(req.query);
+  app.get("/services", {
+    schema: {
+      tags: ["Services"],
+      summary: "List services (optionally filter by provider or status)",
+      querystring: listQuerySchema,
+      response: { 200: z.array(serviceResponseSchema) },
+    },
+  }, async (req, reply) => {
+    const query = listQuerySchema.safeParse(req.query);
     if (!query.success) return sendZodError(reply, query.error);
     const where = query.success
       ? {
@@ -45,7 +71,23 @@ export async function servicesRoutes(app: FastifyInstance) {
     return reply.send(services.map(serializeService));
   });
 
-  app.get<{ Params: { id: string } }>("/services/:id", async (req, reply) => {
+  app.get<{ Params: { id: string } }>("/services/:id", {
+    schema: {
+      tags: ["Services"],
+      summary: "Get a service by ID (includes provider info)",
+      params: idParamsSchema,
+      response: {
+        200: serviceResponseSchema.extend({
+          provider: z.object({
+            provider_id: z.string(),
+            name: z.string(),
+            trust_level: z.string(),
+          }),
+        }),
+        404: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const params = idParamsSchema.safeParse(req.params);
     if (!params.success) return sendZodError(reply, params.error);
     const service = await prisma.service.findUnique({
@@ -63,7 +105,18 @@ export async function servicesRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post("/services", async (req, reply) => {
+  app.post("/services", {
+    schema: {
+      tags: ["Services"],
+      summary: "Register a new service",
+      body: createSchema,
+      response: {
+        201: serviceResponseSchema,
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const providerExists = await prisma.provider.findUnique({
@@ -80,7 +133,19 @@ export async function servicesRoutes(app: FastifyInstance) {
     return reply.status(201).send(serializeService(service));
   });
 
-  app.patch<{ Params: { id: string } }>("/services/:id", async (req, reply) => {
+  app.patch<{ Params: { id: string } }>("/services/:id", {
+    schema: {
+      tags: ["Services"],
+      summary: "Update a service",
+      params: idParamsSchema,
+      body: updateSchema,
+      response: {
+        200: serviceResponseSchema,
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const params = idParamsSchema.safeParse(req.params);
     if (!params.success) return sendZodError(reply, params.error);
     const parsed = updateSchema.safeParse(req.body);
@@ -100,7 +165,17 @@ export async function servicesRoutes(app: FastifyInstance) {
     return reply.send(serializeService(service));
   });
 
-  app.delete<{ Params: { id: string } }>("/services/:id", async (req, reply) => {
+  app.delete<{ Params: { id: string } }>("/services/:id", {
+    schema: {
+      tags: ["Services"],
+      summary: "Delete a service",
+      params: idParamsSchema,
+      response: {
+        204: z.null(),
+        404: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const params = idParamsSchema.safeParse(req.params);
     if (!params.success) return sendZodError(reply, params.error);
     const existing = await prisma.service.findUnique({

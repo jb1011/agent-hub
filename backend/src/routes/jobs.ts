@@ -15,7 +15,6 @@ const JOB_STATUS = [
   "ACCEPTED", "SETTLED", "FAILED", "EXPIRED", "REFUNDED", "DISPUTED",
 ] as const;
 
-// Valid transitions: which statuses can move to which
 const TRANSITIONS: Record<string, string[]> = {
   CREATED:   ["FUNDED", "EXPIRED"],
   FUNDED:    ["RUNNING", "REFUNDED", "EXPIRED"],
@@ -55,6 +54,38 @@ const onchainJobSchema = z.object({
   job_id: z.string().min(1),
 });
 
+const idParamsSchema = z.object({ id: z.string().min(1) });
+
+const jobResponseSchema = z.object({
+  request_id: z.string(),
+  job_id: z.string().nullable(),
+  user_wallet: z.string(),
+  service_id: z.string(),
+  status: z.string(),
+  input_uri: z.string().nullable(),
+  input_hash: z.string().nullable(),
+  output_uri: z.string().nullable(),
+  output_hash: z.string().nullable(),
+  error_message: z.string().nullable(),
+  work_deadline: z.string().nullable(),
+  review_deadline: z.string().nullable(),
+  funded_at: z.string().nullable(),
+  started_at: z.string().nullable(),
+  submitted_at: z.string().nullable(),
+  accepted_at: z.string().nullable(),
+  settled_at: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+const listQuerySchema = z.object({
+  request_id: z.string().optional(),
+  job_id: z.string().optional(),
+  user_wallet: z.string().optional(),
+  service_id: uint256StringSchema("service_id").optional(),
+  status: z.enum(JOB_STATUS).optional(),
+});
+
 function timestampForStatus(status: string): Record<string, Date> {
   const now = new Date();
   const map: Record<string, Record<string, Date>> = {
@@ -68,16 +99,15 @@ function timestampForStatus(status: string): Record<string, Date> {
 }
 
 export async function jobsRoutes(app: FastifyInstance) {
-  app.get("/jobs", async (req, reply) => {
-    const query = z
-      .object({
-        request_id: z.string().optional(),
-        job_id: z.string().optional(),
-        user_wallet: z.string().optional(),
-        service_id: uint256StringSchema("service_id").optional(),
-        status: z.enum(JOB_STATUS).optional(),
-      })
-      .safeParse(req.query);
+  app.get("/jobs", {
+    schema: {
+      tags: ["Jobs"],
+      summary: "List jobs with optional filters",
+      querystring: listQuerySchema,
+      response: { 200: z.array(jobResponseSchema) },
+    },
+  }, async (req, reply) => {
+    const query = listQuerySchema.safeParse(req.query);
     if (!query.success) return sendZodError(reply, query.error);
     const where = query.success
       ? {
@@ -95,7 +125,24 @@ export async function jobsRoutes(app: FastifyInstance) {
     return reply.send(jobs.map(serializeJob));
   });
 
-  app.get<{ Params: { id: string } }>("/jobs/:id", async (req, reply) => {
+  app.get<{ Params: { id: string } }>("/jobs/:id", {
+    schema: {
+      tags: ["Jobs"],
+      summary: "Get a job by request_id or job_id (includes escrow and service info)",
+      params: idParamsSchema,
+      response: {
+        200: jobResponseSchema.extend({
+          escrow: z.unknown().nullable(),
+          service: z.object({
+            service_id: z.string(),
+            name: z.string(),
+            price_usdc: z.string(),
+          }),
+        }),
+        404: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const job = await prisma.job.findFirst({
       where: { OR: [{ request_id: req.params.id }, { job_id: req.params.id }] },
       include: { escrow: true, service: true },
@@ -112,7 +159,29 @@ export async function jobsRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post("/jobs", async (req, reply) => {
+  app.post("/jobs", {
+    schema: {
+      tags: ["Jobs"],
+      summary: "Create a job and generate on-chain creation arguments",
+      body: createSchema,
+      response: {
+        201: jobResponseSchema.extend({
+          create_job_args: z.object({
+            service_id: z.string(),
+            request_id: z.string(),
+            input_commitment: z.string(),
+            queue_timeout_seconds: z.number(),
+            expires_at: z.number(),
+            delivery_attester_signature: z.string(),
+          }),
+        }),
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+        500: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const service = await prisma.service.findUnique({
@@ -172,13 +241,26 @@ export async function jobsRoutes(app: FastifyInstance) {
       });
     } catch (err) {
       if (err instanceof CreateJobAuthorizationError) {
-        return reply.status(err.statusCode).send({ error: err.message });
+        return reply.status(err.statusCode as 400 | 500).send({ error: err.message });
       }
       throw err;
     }
   });
 
-  app.patch<{ Params: { id: string } }>("/jobs/:id/onchain-job", async (req, reply) => {
+  app.patch<{ Params: { id: string } }>("/jobs/:id/onchain-job", {
+    schema: {
+      tags: ["Jobs"],
+      summary: "Link an on-chain job_id to a request",
+      params: idParamsSchema,
+      body: onchainJobSchema,
+      response: {
+        200: jobResponseSchema,
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const parsed = onchainJobSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const job = await prisma.job.findFirst({
@@ -198,7 +280,21 @@ export async function jobsRoutes(app: FastifyInstance) {
     return reply.send(serializeJob(updated));
   });
 
-  app.patch<{ Params: { id: string } }>("/jobs/:id/status", async (req, reply) => {
+  app.patch<{ Params: { id: string } }>("/jobs/:id/status", {
+    schema: {
+      tags: ["Jobs"],
+      summary: "Transition job status",
+      description: `Valid transitions:\n\`CREATED → FUNDED | EXPIRED\`\n\`FUNDED → RUNNING | REFUNDED | EXPIRED\`\n\`RUNNING → SUBMITTED | FAILED | EXPIRED\`\n\`SUBMITTED → ACCEPTED | DISPUTED | EXPIRED\`\n\`ACCEPTED → SETTLED | DISPUTED\`\n\`FAILED → REFUNDED\`\n\`EXPIRED → REFUNDED\`\n\`DISPUTED → SETTLED | REFUNDED\``,
+      params: idParamsSchema,
+      body: transitionSchema,
+      response: {
+        200: jobResponseSchema,
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        403: z.object({ error: z.string() }),
+        404: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const parsed = transitionSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const job = await prisma.job.findFirst({

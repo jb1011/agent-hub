@@ -18,8 +18,37 @@ const fundSchema = z.object({ fund_tx_hash: z.string().min(1) });
 const releaseSchema = z.object({ release_tx_hash: z.string().min(1) });
 const refundSchema = z.object({ refund_tx_hash: z.string().min(1) });
 
+const idParamsSchema = z.object({ id: z.string().min(1) });
+
+const escrowResponseSchema = z.object({
+  escrow_id: z.string(),
+  request_id: z.string(),
+  chain_id: z.number(),
+  token_address: z.string(),
+  escrow_contract: z.string(),
+  amount_usdc: z.number(),
+  platform_fee_usdc: z.number(),
+  provider_payout_usdc: z.number(),
+  escrow_status: z.string(),
+  fund_tx_hash: z.string().nullable(),
+  release_tx_hash: z.string().nullable(),
+  refund_tx_hash: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
 export async function escrowsRoutes(app: FastifyInstance) {
-  app.get<{ Params: { id: string } }>("/escrows/:id", async (req, reply) => {
+  app.get<{ Params: { id: string } }>("/escrows/:id", {
+    schema: {
+      tags: ["Escrows"],
+      summary: "Get an escrow by escrow_id",
+      params: idParamsSchema,
+      response: {
+        200: escrowResponseSchema,
+        404: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const escrow = await prisma.escrow.findUnique({
       where: { escrow_id: req.params.id },
     });
@@ -27,7 +56,17 @@ export async function escrowsRoutes(app: FastifyInstance) {
     return reply.send(serializeEscrow(escrow));
   });
 
-  app.get<{ Params: { id: string } }>("/jobs/:id/escrow", async (req, reply) => {
+  app.get<{ Params: { id: string } }>("/jobs/:id/escrow", {
+    schema: {
+      tags: ["Escrows"],
+      summary: "Get the escrow linked to a job (by request_id or job_id)",
+      params: idParamsSchema,
+      response: {
+        200: escrowResponseSchema,
+        404: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const escrow = await prisma.escrow.findFirst({
       where: {
         OR: [{ request_id: req.params.id }, { job: { job_id: req.params.id } }],
@@ -37,7 +76,19 @@ export async function escrowsRoutes(app: FastifyInstance) {
     return reply.send(serializeEscrow(escrow));
   });
 
-  app.post("/escrows", async (req, reply) => {
+  app.post("/escrows", {
+    schema: {
+      tags: ["Escrows"],
+      summary: "Create an escrow record for a job",
+      body: createSchema,
+      response: {
+        201: escrowResponseSchema,
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const jobExists = await prisma.job.findUnique({
@@ -52,7 +103,20 @@ export async function escrowsRoutes(app: FastifyInstance) {
     return reply.status(201).send(serializeEscrow(escrow));
   });
 
-  app.post<{ Params: { id: string } }>("/escrows/:id/fund", async (req, reply) => {
+  app.post<{ Params: { id: string } }>("/escrows/:id/fund", {
+    schema: {
+      tags: ["Escrows"],
+      summary: "Mark escrow as funded (UNFUNDED → LOCKED)",
+      params: idParamsSchema,
+      body: fundSchema,
+      response: {
+        200: escrowResponseSchema,
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const parsed = fundSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const escrow = await prisma.escrow.findUnique({ where: { escrow_id: req.params.id } });
@@ -67,7 +131,20 @@ export async function escrowsRoutes(app: FastifyInstance) {
     return reply.send(serializeEscrow(updated));
   });
 
-  app.post<{ Params: { id: string } }>("/escrows/:id/release", async (req, reply) => {
+  app.post<{ Params: { id: string } }>("/escrows/:id/release", {
+    schema: {
+      tags: ["Escrows"],
+      summary: "Release escrow to provider (LOCKED → RELEASED)",
+      params: idParamsSchema,
+      body: releaseSchema,
+      response: {
+        200: escrowResponseSchema,
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const parsed = releaseSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const escrow = await prisma.escrow.findUnique({ where: { escrow_id: req.params.id } });
@@ -82,7 +159,20 @@ export async function escrowsRoutes(app: FastifyInstance) {
     return reply.send(serializeEscrow(updated));
   });
 
-  app.post<{ Params: { id: string } }>("/escrows/:id/refund", async (req, reply) => {
+  app.post<{ Params: { id: string } }>("/escrows/:id/refund", {
+    schema: {
+      tags: ["Escrows"],
+      summary: "Refund escrow to user (LOCKED | DISPUTED → REFUNDED)",
+      params: idParamsSchema,
+      body: refundSchema,
+      response: {
+        200: escrowResponseSchema,
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const parsed = refundSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const escrow = await prisma.escrow.findUnique({ where: { escrow_id: req.params.id } });
@@ -97,7 +187,18 @@ export async function escrowsRoutes(app: FastifyInstance) {
     return reply.send(serializeEscrow(updated));
   });
 
-  app.post<{ Params: { id: string } }>("/escrows/:id/dispute", async (req, reply) => {
+  app.post<{ Params: { id: string } }>("/escrows/:id/dispute", {
+    schema: {
+      tags: ["Escrows"],
+      summary: "Open a dispute on a locked escrow (LOCKED → DISPUTED)",
+      params: idParamsSchema,
+      response: {
+        200: escrowResponseSchema,
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
     const escrow = await prisma.escrow.findUnique({ where: { escrow_id: req.params.id } });
     if (!escrow) return notFound(reply);
     if (!["LOCKED"].includes(escrow.escrow_status)) {
