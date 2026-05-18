@@ -29,6 +29,7 @@ async function main() {
       service_type: "AI",
       endpoint_path: "/process",
       price_usdc: 1.0,
+      max_concurrent_jobs: 2,
       timeout_seconds: 60,
       status: "ACTIVE",
     },

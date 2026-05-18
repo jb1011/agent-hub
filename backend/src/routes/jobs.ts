@@ -1,12 +1,18 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { JobStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { serializeJob, serializeEscrow } from "../lib/serialize.js";
 import { notFound, sendZodError, forbidden, conflict } from "../lib/http-errors.js";
 import {
+  buildJobAcceptance,
+  buildStartJobAuthorization,
   CreateJobAuthorizationError,
   isBytes32,
+  normalizeOutputCommitment,
+  signDeliveryAttestation,
   signCreateJobAuthorization,
+  signNoDeliveryAttestation,
 } from "../lib/create-job-authorization.js";
 import { uint256StringSchema } from "../lib/uint256.js";
 
@@ -27,6 +33,13 @@ const TRANSITIONS: Record<string, string[]> = {
   REFUNDED:  [],
   DISPUTED:  ["SETTLED", "REFUNDED"],
 };
+
+const CAPACITY_JOB_STATUSES: JobStatus[] = [
+  JobStatus.RUNNING,
+  JobStatus.SUBMITTED,
+  JobStatus.ACCEPTED,
+  JobStatus.DISPUTED,
+];
 
 const createSchema = z.object({
   job_id: z.string().min(1).optional(),
@@ -54,6 +67,33 @@ const onchainJobSchema = z.object({
   job_id: z.string().min(1),
 });
 
+const authExpirySchema = z.object({
+  expires_at: z.number().int().positive().optional(),
+  expires_in_seconds: z.number().int().positive().optional(),
+});
+
+const providerSignatureSchema = authExpirySchema.extend({
+  provider_signature: z.string().min(1),
+});
+
+const outputCommitmentSchema = authExpirySchema.extend({
+  output_uri: z.string().optional(),
+  output_hash: z.string().optional(),
+  output_commitment: z.string().refine(isBytes32, "output_commitment must be bytes32").optional(),
+});
+
+const deliveryAttestationSchema = outputCommitmentSchema.extend({
+  delivered_at: z.number().int().positive().optional(),
+});
+
+const userSignatureSchema = outputCommitmentSchema.extend({
+  user_signature: z.string().min(1),
+});
+
+const noDeliveryAttestationSchema = authExpirySchema.extend({
+  checked_at: z.number().int().positive().optional(),
+});
+
 const idParamsSchema = z.object({ id: z.string().min(1) });
 
 const jobResponseSchema = z.object({
@@ -67,15 +107,17 @@ const jobResponseSchema = z.object({
   output_uri: z.string().nullable(),
   output_hash: z.string().nullable(),
   error_message: z.string().nullable(),
+  queue_deadline: z.string().nullable(),
   work_deadline: z.string().nullable(),
   review_deadline: z.string().nullable(),
+  final_refund_deadline: z.string().nullable(),
+  delivered_at: z.string().nullable(),
   funded_at: z.string().nullable(),
   started_at: z.string().nullable(),
   submitted_at: z.string().nullable(),
   accepted_at: z.string().nullable(),
   settled_at: z.string().nullable(),
   created_at: z.string(),
-  updated_at: z.string(),
 });
 
 const listQuerySchema = z.object({
@@ -96,6 +138,67 @@ function timestampForStatus(status: string): Record<string, Date> {
     SETTLED:   { settled_at: now },
   };
   return map[status] ?? {};
+}
+
+function isStatus(status: JobStatus, statuses: readonly JobStatus[]): boolean {
+  return statuses.includes(status);
+}
+
+function dateFromUnixSeconds(seconds: number): Date {
+  return new Date(seconds * 1000);
+}
+
+function unixSeconds(date: Date): number {
+  return Math.floor(date.getTime() / 1000);
+}
+
+function secondsFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) return fallback;
+  return value;
+}
+
+async function getJobWithService(id: string) {
+  return prisma.job.findFirst({
+    where: { OR: [{ request_id: id }, { job_id: id }] },
+    include: { service: true },
+  });
+}
+
+async function runningCapacityForService(serviceId: string) {
+  return prisma.job.count({
+    where: {
+      service_id: serviceId,
+      status: { in: CAPACITY_JOB_STATUSES },
+    },
+  });
+}
+
+async function ensureStartable(job: Awaited<ReturnType<typeof getJobWithService>>) {
+  if (!job) return "job_not_found";
+  if (!job.job_id) return "job_not_funded_onchain";
+  if (!job.input_hash) return "input_commitment_missing";
+  if (job.status !== JobStatus.FUNDED) return `job_not_funded_status_${job.status}`;
+  if (job.queue_deadline && job.queue_deadline.getTime() <= Date.now()) {
+    return "queue_deadline_expired";
+  }
+  const activeJobs = await runningCapacityForService(job.service_id);
+  if (activeJobs >= job.service.max_concurrent_jobs) return "service_capacity_exceeded";
+  return null;
+}
+
+function ensureOnchainJob(job: Awaited<ReturnType<typeof getJobWithService>>) {
+  if (!job) throw new CreateJobAuthorizationError("job_not_found", 404);
+  if (!job.job_id) throw new CreateJobAuthorizationError("job_not_funded_onchain", 409);
+  if (!job.input_hash) throw new CreateJobAuthorizationError("input_commitment_missing", 409);
+  return {
+    jobId: job.job_id,
+    providerId: job.service.provider_id,
+    serviceId: job.service_id,
+    inputCommitment: job.input_hash,
+  };
 }
 
 export async function jobsRoutes(app: FastifyInstance) {
@@ -278,6 +381,409 @@ export async function jobsRoutes(app: FastifyInstance) {
       data: { job_id: parsed.data.job_id },
     });
     return reply.send(serializeJob(updated));
+  });
+
+  app.post<{ Params: { id: string } }>("/jobs/:id/start-authorization-request", {
+    schema: {
+      tags: ["Jobs"],
+      summary: "Build the EIP-712 payload the provider signs before startJob",
+      params: idParamsSchema,
+      body: authExpirySchema,
+      response: {
+        200: z.object({
+          typed_data: z.unknown(),
+          start_job_args: z.object({
+            job_id: z.string(),
+            expires_at: z.number(),
+          }),
+        }),
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+        500: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
+    const parsed = authExpirySchema.safeParse(req.body);
+    if (!parsed.success) return sendZodError(reply, parsed.error);
+    const job = await getJobWithService(req.params.id);
+    const notStartable = await ensureStartable(job);
+    if (notStartable === "job_not_found") return notFound(reply);
+    if (notStartable) return conflict(reply, notStartable);
+
+    try {
+      return reply.send(buildStartJobAuthorization({
+        ...ensureOnchainJob(job),
+        expiresAt: parsed.data.expires_at,
+        expiresInSeconds: parsed.data.expires_in_seconds,
+      }));
+    } catch (err) {
+      if (err instanceof CreateJobAuthorizationError) {
+        return reply.status(err.statusCode as 400 | 404 | 409 | 500).send({ error: err.message });
+      }
+      throw err;
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/jobs/:id/start-job", {
+    schema: {
+      tags: ["Jobs"],
+      summary: "Return startJob calldata arguments after provider signed StartJobAuthorization",
+      params: idParamsSchema,
+      body: providerSignatureSchema,
+      response: {
+        200: z.object({
+          start_job_args: z.object({
+            job_id: z.string(),
+            expires_at: z.number(),
+            provider_signature: z.string(),
+          }),
+        }),
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+        500: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
+    const parsed = providerSignatureSchema.safeParse(req.body);
+    if (!parsed.success) return sendZodError(reply, parsed.error);
+    const job = await getJobWithService(req.params.id);
+    const notStartable = await ensureStartable(job);
+    if (notStartable === "job_not_found") return notFound(reply);
+    if (notStartable) return conflict(reply, notStartable);
+
+    try {
+      const authorization = buildStartJobAuthorization({
+        ...ensureOnchainJob(job),
+        expiresAt: parsed.data.expires_at,
+        expiresInSeconds: parsed.data.expires_in_seconds,
+      });
+      return reply.send({
+        start_job_args: {
+          ...authorization.start_job_args,
+          provider_signature: parsed.data.provider_signature,
+        },
+      });
+    } catch (err) {
+      if (err instanceof CreateJobAuthorizationError) {
+        return reply.status(err.statusCode as 400 | 404 | 409 | 500).send({ error: err.message });
+      }
+      throw err;
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/jobs/:id/delivery-attestation", {
+    schema: {
+      tags: ["Jobs"],
+      summary: "Validate provider output and sign DeliveryAttestation",
+      params: idParamsSchema,
+      body: deliveryAttestationSchema,
+      response: {
+        200: jobResponseSchema.extend({
+          settle_after_review_timeout_args: z.object({
+            job_id: z.string(),
+            output_commitment: z.string(),
+            delivered_at: z.number(),
+            expires_at: z.number(),
+            delivery_attester_signature: z.string(),
+          }),
+        }),
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+        500: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
+    const parsed = deliveryAttestationSchema.safeParse(req.body);
+    if (!parsed.success) return sendZodError(reply, parsed.error);
+    const job = await getJobWithService(req.params.id);
+    if (!job) return notFound(reply);
+    if (!isStatus(job.status, [JobStatus.RUNNING, JobStatus.SUBMITTED])) {
+      return conflict(reply, `job_not_running_status_${job.status}`);
+    }
+
+    try {
+      const deliveredAt = parsed.data.delivered_at ?? Math.floor(Date.now() / 1000);
+      if (job.started_at && deliveredAt < unixSeconds(job.started_at)) {
+        return conflict(reply, "delivered_before_start");
+      }
+      if (job.work_deadline && deliveredAt > unixSeconds(job.work_deadline)) {
+        return conflict(reply, "delivered_after_work_deadline");
+      }
+      const outputCommitment = normalizeOutputCommitment({
+        outputCommitment: parsed.data.output_commitment,
+        outputHash: parsed.data.output_hash,
+        outputUri: parsed.data.output_uri,
+      });
+      const attestation = await signDeliveryAttestation({
+        ...ensureOnchainJob(job),
+        outputCommitment,
+        deliveredAt,
+        expiresAt: parsed.data.expires_at,
+        expiresInSeconds: parsed.data.expires_in_seconds,
+      });
+      const deliveredAtDate = dateFromUnixSeconds(attestation.delivered_at);
+      const reviewTimeoutSeconds = secondsFromEnv("REVIEW_TIMEOUT_SECONDS", 3600);
+      const updated = await prisma.job.update({
+        where: { request_id: job.request_id },
+        data: {
+          status: JobStatus.SUBMITTED,
+          output_uri: parsed.data.output_uri,
+          output_hash: outputCommitment,
+          submitted_at: deliveredAtDate,
+          delivered_at: deliveredAtDate,
+          review_deadline: new Date(deliveredAtDate.getTime() + reviewTimeoutSeconds * 1000),
+        },
+      });
+      return reply.send({
+        ...serializeJob(updated),
+        settle_after_review_timeout_args: attestation.settle_after_review_timeout_args,
+      });
+    } catch (err) {
+      if (err instanceof CreateJobAuthorizationError) {
+        return reply.status(err.statusCode as 400 | 404 | 409 | 500).send({ error: err.message });
+      }
+      throw err;
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/jobs/:id/no-delivery-attestation", {
+    schema: {
+      tags: ["Jobs"],
+      summary: "Sign NoDeliveryAttestation after the work deadline",
+      params: idParamsSchema,
+      body: noDeliveryAttestationSchema,
+      response: {
+        200: jobResponseSchema.extend({
+          refund_with_no_delivery_attestation_args: z.object({
+            job_id: z.string(),
+            checked_at: z.number(),
+            expires_at: z.number(),
+            no_delivery_attester_signature: z.string(),
+          }),
+        }),
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+        500: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
+    const parsed = noDeliveryAttestationSchema.safeParse(req.body);
+    if (!parsed.success) return sendZodError(reply, parsed.error);
+    const job = await getJobWithService(req.params.id);
+    if (!job) return notFound(reply);
+    if (job.status !== JobStatus.RUNNING) return conflict(reply, `job_not_running_status_${job.status}`);
+    if (!job.work_deadline) return conflict(reply, "work_deadline_missing");
+
+    try {
+      const checkedAt = parsed.data.checked_at ?? Math.floor(Date.now() / 1000);
+      if (checkedAt <= unixSeconds(job.work_deadline)) return conflict(reply, "checked_before_work_deadline");
+      const attestation = await signNoDeliveryAttestation({
+        ...ensureOnchainJob(job),
+        checkedAt,
+        expiresAt: parsed.data.expires_at,
+        expiresInSeconds: parsed.data.expires_in_seconds,
+      });
+      const updated = await prisma.job.update({
+        where: { request_id: job.request_id },
+        data: {
+          status: JobStatus.FAILED,
+          error_message: "no_delivery_attested",
+        },
+      });
+      return reply.send({
+        ...serializeJob(updated),
+        refund_with_no_delivery_attestation_args: attestation.refund_with_no_delivery_attestation_args,
+      });
+    } catch (err) {
+      if (err instanceof CreateJobAuthorizationError) {
+        return reply.status(err.statusCode as 400 | 404 | 409 | 500).send({ error: err.message });
+      }
+      throw err;
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/jobs/:id/acceptance-request", {
+    schema: {
+      tags: ["Jobs"],
+      summary: "Build the EIP-712 payload the user signs to accept output",
+      params: idParamsSchema,
+      body: outputCommitmentSchema,
+      response: {
+        200: z.object({
+          typed_data: z.unknown(),
+          settle_with_user_signature_args: z.object({
+            job_id: z.string(),
+            output_commitment: z.string(),
+            expires_at: z.number(),
+          }),
+        }),
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+        500: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
+    const parsed = outputCommitmentSchema.safeParse(req.body);
+    if (!parsed.success) return sendZodError(reply, parsed.error);
+    const job = await getJobWithService(req.params.id);
+    if (!job) return notFound(reply);
+    if (!isStatus(job.status, [JobStatus.RUNNING, JobStatus.SUBMITTED, JobStatus.ACCEPTED])) {
+      return conflict(reply, `job_not_acceptance_ready_status_${job.status}`);
+    }
+
+    try {
+      const outputCommitment = normalizeOutputCommitment({
+        outputCommitment: parsed.data.output_commitment,
+        outputHash: parsed.data.output_hash ?? job.output_hash ?? undefined,
+        outputUri: parsed.data.output_uri ?? job.output_uri ?? undefined,
+      });
+      return reply.send(buildJobAcceptance({
+        ...ensureOnchainJob(job),
+        outputCommitment,
+        expiresAt: parsed.data.expires_at,
+        expiresInSeconds: parsed.data.expires_in_seconds,
+      }));
+    } catch (err) {
+      if (err instanceof CreateJobAuthorizationError) {
+        return reply.status(err.statusCode as 400 | 404 | 409 | 500).send({ error: err.message });
+      }
+      throw err;
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/jobs/:id/settle-with-user-signature", {
+    schema: {
+      tags: ["Jobs"],
+      summary: "Return settleWithUserSignature calldata arguments",
+      params: idParamsSchema,
+      body: userSignatureSchema,
+      response: {
+        200: jobResponseSchema.extend({
+          settle_with_user_signature_args: z.object({
+            job_id: z.string(),
+            output_commitment: z.string(),
+            expires_at: z.number(),
+            user_signature: z.string(),
+          }),
+        }),
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+        500: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
+    const parsed = userSignatureSchema.safeParse(req.body);
+    if (!parsed.success) return sendZodError(reply, parsed.error);
+    const job = await getJobWithService(req.params.id);
+    if (!job) return notFound(reply);
+    if (!isStatus(job.status, [JobStatus.SUBMITTED, JobStatus.ACCEPTED])) {
+      return conflict(reply, `job_not_submitted_status_${job.status}`);
+    }
+
+    try {
+      const outputCommitment = normalizeOutputCommitment({
+        outputCommitment: parsed.data.output_commitment,
+        outputHash: parsed.data.output_hash ?? job.output_hash ?? undefined,
+        outputUri: parsed.data.output_uri ?? job.output_uri ?? undefined,
+      });
+      const acceptance = buildJobAcceptance({
+        ...ensureOnchainJob(job),
+        outputCommitment,
+        expiresAt: parsed.data.expires_at,
+        expiresInSeconds: parsed.data.expires_in_seconds,
+      });
+      const updated = await prisma.job.update({
+        where: { request_id: job.request_id },
+        data: {
+          status: JobStatus.ACCEPTED,
+          output_uri: parsed.data.output_uri ?? job.output_uri,
+          output_hash: outputCommitment,
+          accepted_at: new Date(),
+        },
+      });
+      return reply.send({
+        ...serializeJob(updated),
+        settle_with_user_signature_args: {
+          ...acceptance.settle_with_user_signature_args,
+          user_signature: parsed.data.user_signature,
+        },
+      });
+    } catch (err) {
+      if (err instanceof CreateJobAuthorizationError) {
+        return reply.status(err.statusCode as 400 | 404 | 409 | 500).send({ error: err.message });
+      }
+      throw err;
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/jobs/:id/refund-after-queue-timeout", {
+    schema: {
+      tags: ["Jobs"],
+      summary: "Return refundAfterQueueTimeout calldata arguments after queue deadline",
+      params: idParamsSchema,
+      response: {
+        200: jobResponseSchema.extend({
+          refund_after_queue_timeout_args: z.object({ job_id: z.string() }),
+        }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
+    const job = await getJobWithService(req.params.id);
+    if (!job) return notFound(reply);
+    if (!job.job_id) return conflict(reply, "job_not_funded_onchain");
+    if (job.status !== JobStatus.FUNDED) return conflict(reply, `job_not_queued_status_${job.status}`);
+    if (!job.queue_deadline) return conflict(reply, "queue_deadline_missing");
+    if (job.queue_deadline.getTime() >= Date.now()) return conflict(reply, "queue_deadline_not_expired");
+
+    const updated = await prisma.job.update({
+      where: { request_id: job.request_id },
+      data: { status: JobStatus.EXPIRED, error_message: "queue_deadline_expired" },
+    });
+    return reply.send({
+      ...serializeJob(updated),
+      refund_after_queue_timeout_args: { job_id: job.job_id },
+    });
+  });
+
+  app.post<{ Params: { id: string } }>("/jobs/:id/refund-after-final-timeout", {
+    schema: {
+      tags: ["Jobs"],
+      summary: "Return refundAfterFinalTimeout calldata arguments after final refund deadline",
+      params: idParamsSchema,
+      response: {
+        200: jobResponseSchema.extend({
+          refund_after_final_timeout_args: z.object({ job_id: z.string() }),
+        }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
+    const job = await getJobWithService(req.params.id);
+    if (!job) return notFound(reply);
+    if (!job.job_id) return conflict(reply, "job_not_funded_onchain");
+    if (!isStatus(job.status, [JobStatus.RUNNING, JobStatus.SUBMITTED, JobStatus.ACCEPTED, JobStatus.FAILED])) {
+      return conflict(reply, `job_not_running_status_${job.status}`);
+    }
+    if (!job.final_refund_deadline) return conflict(reply, "final_refund_deadline_missing");
+    if (job.final_refund_deadline.getTime() >= Date.now()) return conflict(reply, "final_refund_deadline_not_expired");
+
+    const updated = await prisma.job.update({
+      where: { request_id: job.request_id },
+      data: { status: JobStatus.EXPIRED, error_message: "final_refund_deadline_expired" },
+    });
+    return reply.send({
+      ...serializeJob(updated),
+      refund_after_final_timeout_args: { job_id: job.job_id },
+    });
   });
 
   app.patch<{ Params: { id: string } }>("/jobs/:id/status", {

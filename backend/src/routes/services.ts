@@ -16,6 +16,7 @@ const createSchema = z.object({
   input_schema: z.unknown().optional(),
   output_schema: z.unknown().optional(),
   price_usdc: z.number().positive(),
+  max_concurrent_jobs: z.number().int().positive(),
   timeout_seconds: z.number().int().positive().optional(),
   status: z.enum(["REGISTERED", "ACTIVE", "INACTIVE", "SUSPENDED"]).optional(),
 });
@@ -36,6 +37,7 @@ const serviceResponseSchema = z.object({
   input_schema: z.unknown().nullable(),
   output_schema: z.unknown().nullable(),
   price_usdc: z.string(),
+  max_concurrent_jobs: z.number(),
   timeout_seconds: z.number().nullable(),
   status: z.string(),
   created_at: z.string(),

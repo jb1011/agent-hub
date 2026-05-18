@@ -26,6 +26,50 @@ const CREATE_JOB_TYPES: Record<string, TypedDataField[]> = {
   ],
 };
 
+const START_JOB_TYPES: Record<string, TypedDataField[]> = {
+  StartJobAuthorization: [
+    { name: "jobId", type: "uint256" },
+    { name: "providerId", type: "uint256" },
+    { name: "serviceId", type: "uint256" },
+    { name: "inputCommitment", type: "bytes32" },
+    { name: "expiresAt", type: "uint256" },
+  ],
+};
+
+const JOB_ACCEPTANCE_TYPES: Record<string, TypedDataField[]> = {
+  JobAcceptance: [
+    { name: "jobId", type: "uint256" },
+    { name: "providerId", type: "uint256" },
+    { name: "serviceId", type: "uint256" },
+    { name: "inputCommitment", type: "bytes32" },
+    { name: "outputCommitment", type: "bytes32" },
+    { name: "expiresAt", type: "uint256" },
+  ],
+};
+
+const DELIVERY_ATTESTATION_TYPES: Record<string, TypedDataField[]> = {
+  DeliveryAttestation: [
+    { name: "jobId", type: "uint256" },
+    { name: "providerId", type: "uint256" },
+    { name: "serviceId", type: "uint256" },
+    { name: "inputCommitment", type: "bytes32" },
+    { name: "outputCommitment", type: "bytes32" },
+    { name: "deliveredAt", type: "uint256" },
+    { name: "expiresAt", type: "uint256" },
+  ],
+};
+
+const NO_DELIVERY_ATTESTATION_TYPES: Record<string, TypedDataField[]> = {
+  NoDeliveryAttestation: [
+    { name: "jobId", type: "uint256" },
+    { name: "providerId", type: "uint256" },
+    { name: "serviceId", type: "uint256" },
+    { name: "inputCommitment", type: "bytes32" },
+    { name: "checkedAt", type: "uint256" },
+    { name: "expiresAt", type: "uint256" },
+  ],
+};
+
 type CreateJobAuthorizationParams = {
   userWallet: string;
   providerId: string;
@@ -39,6 +83,27 @@ type CreateJobAuthorizationParams = {
   inputUri?: string;
   expiresAt?: number;
   expiresInSeconds?: number;
+};
+
+type JobAuthorizationBaseParams = {
+  jobId: string;
+  providerId: string;
+  serviceId: string;
+  inputCommitment: string;
+  expiresAt?: number;
+  expiresInSeconds?: number;
+};
+
+type JobOutputParams = JobAuthorizationBaseParams & {
+  outputCommitment: string;
+};
+
+type DeliveryAttestationParams = JobOutputParams & {
+  deliveredAt: number;
+};
+
+type NoDeliveryAttestationParams = JobAuthorizationBaseParams & {
+  checkedAt: number;
 };
 
 export class CreateJobAuthorizationError extends Error {
@@ -85,6 +150,13 @@ function positiveSafeInteger(value: number, fieldName: string): number {
     throw new CreateJobAuthorizationError(`${fieldName}_must_be_positive_integer`);
   }
   return value;
+}
+
+function positiveUnixSeconds(value: number | undefined, fieldName: string): number {
+  if (value == null) {
+    throw new CreateJobAuthorizationError(`${fieldName}_is_required`);
+  }
+  return positiveSafeInteger(value, fieldName);
 }
 
 function minSafeInteger(value: number, minimum: number, fieldName: string): number {
@@ -135,12 +207,82 @@ function normalizeInputCommitment(params: {
   return keccak256(toUtf8Bytes(params.requestId));
 }
 
-export async function signCreateJobAuthorization(params: CreateJobAuthorizationParams) {
+function normalizeBytes32(value: string, fieldName: string): string {
+  if (!isBytes32(value)) {
+    throw new CreateJobAuthorizationError(`${fieldName}_must_be_bytes32`);
+  }
+  return value;
+}
+
+export function normalizeOutputCommitment(params: {
+  outputCommitment?: string;
+  outputHash?: string;
+  outputUri?: string;
+}): string {
+  if (params.outputCommitment) {
+    return normalizeBytes32(params.outputCommitment, "output_commitment");
+  }
+
+  if (params.outputHash) {
+    return isBytes32(params.outputHash)
+      ? params.outputHash
+      : keccak256(toUtf8Bytes(params.outputHash));
+  }
+
+  if (params.outputUri) {
+    return keccak256(toUtf8Bytes(params.outputUri));
+  }
+
+  throw new CreateJobAuthorizationError("output_commitment_is_required");
+}
+
+function authExpiresAt(expiresAt?: number, expiresInSeconds?: number): number {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const normalizedExpiresAt = positiveSafeInteger(
+    expiresAt ??
+      nowSeconds +
+        (expiresInSeconds ?? optionalNumberEnv("JOB_AUTH_EXPIRES_IN_SECONDS", 3600)),
+    "authorization_expires_at"
+  );
+  if (normalizedExpiresAt <= nowSeconds) {
+    throw new CreateJobAuthorizationError("authorization_expires_at_must_be_future");
+  }
+  return normalizedExpiresAt;
+}
+
+function signingDomain() {
   const chainId = process.env.ESCROW_CHAIN_ID?.trim()
     ? optionalNumberEnv("ESCROW_CHAIN_ID", 5042002)
     : optionalNumberEnv("CHAIN_ID", 5042002);
   const verifyingContract = normalizeAddress(requiredEnv("ESCROW_CONTRACT_ADDRESS"), "ESCROW_CONTRACT_ADDRESS");
-  const wallet = new Wallet(requiredEnv("DELIVERY_ATTESTER_PRIVATE_KEY"));
+
+  return {
+    name: "AgentHubEscrow",
+    version: "1",
+    chainId,
+    verifyingContract,
+  };
+}
+
+function deliveryAttesterWallet(): Wallet {
+  return new Wallet(requiredEnv("DELIVERY_ATTESTER_PRIVATE_KEY"));
+}
+
+function jsonTypedData(
+  primaryType: string,
+  types: Record<string, TypedDataField[]>,
+  value: Record<string, string | number>
+) {
+  return {
+    domain: signingDomain(),
+    primaryType,
+    types,
+    value,
+  };
+}
+
+export async function signCreateJobAuthorization(params: CreateJobAuthorizationParams) {
+  const wallet = deliveryAttesterWallet();
 
   const requestId = normalizeRequestId(params.requestId);
   const inputCommitment = normalizeInputCommitment({
@@ -154,16 +296,10 @@ export async function signCreateJobAuthorization(params: CreateJobAuthorizationP
     60,
     "queue_timeout_seconds"
   );
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const expiresAt = positiveSafeInteger(
-    params.expiresAt ??
-      nowSeconds +
-        (params.expiresInSeconds ?? optionalNumberEnv("CREATE_JOB_AUTH_EXPIRES_IN_SECONDS", 3600)),
-    "authorization_expires_at"
+  const expiresAt = authExpiresAt(
+    params.expiresAt,
+    params.expiresInSeconds ?? optionalNumberEnv("CREATE_JOB_AUTH_EXPIRES_IN_SECONDS", 3600)
   );
-  if (expiresAt <= nowSeconds) {
-    throw new CreateJobAuthorizationError("authorization_expires_at_must_be_future");
-  }
 
   const value = {
     user: normalizeAddress(params.userWallet, "user_wallet"),
@@ -177,12 +313,7 @@ export async function signCreateJobAuthorization(params: CreateJobAuthorizationP
     expiresAt: BigInt(expiresAt),
   };
 
-  const domain = {
-    name: "AgentHubEscrow",
-    version: "1",
-    chainId,
-    verifyingContract,
-  };
+  const domain = signingDomain();
 
   const signature = await wallet.signTypedData(domain, CREATE_JOB_TYPES, value);
 
@@ -194,5 +325,109 @@ export async function signCreateJobAuthorization(params: CreateJobAuthorizationP
     queue_timeout_seconds: queueTimeoutSeconds,
     expires_at: expiresAt,
     delivery_attester_signature: signature,
+  };
+}
+
+export function buildStartJobAuthorization(params: JobAuthorizationBaseParams) {
+  const expiresAt = authExpiresAt(params.expiresAt, params.expiresInSeconds);
+  const value = {
+    jobId: uint256(params.jobId, "job_id").toString(),
+    providerId: uint256(params.providerId, "provider_id").toString(),
+    serviceId: uint256(params.serviceId, "service_id").toString(),
+    inputCommitment: normalizeBytes32(params.inputCommitment, "input_commitment"),
+    expiresAt: expiresAt.toString(),
+  };
+
+  return {
+    typed_data: jsonTypedData("StartJobAuthorization", START_JOB_TYPES, value),
+    start_job_args: {
+      job_id: value.jobId,
+      expires_at: expiresAt,
+    },
+  };
+}
+
+export function buildJobAcceptance(params: JobOutputParams) {
+  const expiresAt = authExpiresAt(params.expiresAt, params.expiresInSeconds);
+  const value = {
+    jobId: uint256(params.jobId, "job_id").toString(),
+    providerId: uint256(params.providerId, "provider_id").toString(),
+    serviceId: uint256(params.serviceId, "service_id").toString(),
+    inputCommitment: normalizeBytes32(params.inputCommitment, "input_commitment"),
+    outputCommitment: normalizeBytes32(params.outputCommitment, "output_commitment"),
+    expiresAt: expiresAt.toString(),
+  };
+
+  return {
+    typed_data: jsonTypedData("JobAcceptance", JOB_ACCEPTANCE_TYPES, value),
+    settle_with_user_signature_args: {
+      job_id: value.jobId,
+      output_commitment: value.outputCommitment,
+      expires_at: expiresAt,
+    },
+  };
+}
+
+export async function signDeliveryAttestation(params: DeliveryAttestationParams) {
+  const expiresAt = authExpiresAt(params.expiresAt, params.expiresInSeconds);
+  const deliveredAt = positiveUnixSeconds(params.deliveredAt, "delivered_at");
+  const value = {
+    jobId: uint256(params.jobId, "job_id").toString(),
+    providerId: uint256(params.providerId, "provider_id").toString(),
+    serviceId: uint256(params.serviceId, "service_id").toString(),
+    inputCommitment: normalizeBytes32(params.inputCommitment, "input_commitment"),
+    outputCommitment: normalizeBytes32(params.outputCommitment, "output_commitment"),
+    deliveredAt: deliveredAt.toString(),
+    expiresAt: expiresAt.toString(),
+  };
+
+  const signature = await deliveryAttesterWallet().signTypedData(
+    signingDomain(),
+    DELIVERY_ATTESTATION_TYPES,
+    value
+  );
+
+  return {
+    delivered_at: deliveredAt,
+    expires_at: expiresAt,
+    delivery_attester_signature: signature,
+    settle_after_review_timeout_args: {
+      job_id: value.jobId,
+      output_commitment: value.outputCommitment,
+      delivered_at: deliveredAt,
+      expires_at: expiresAt,
+      delivery_attester_signature: signature,
+    },
+  };
+}
+
+export async function signNoDeliveryAttestation(params: NoDeliveryAttestationParams) {
+  const expiresAt = authExpiresAt(params.expiresAt, params.expiresInSeconds);
+  const checkedAt = positiveUnixSeconds(params.checkedAt, "checked_at");
+  const value = {
+    jobId: uint256(params.jobId, "job_id").toString(),
+    providerId: uint256(params.providerId, "provider_id").toString(),
+    serviceId: uint256(params.serviceId, "service_id").toString(),
+    inputCommitment: normalizeBytes32(params.inputCommitment, "input_commitment"),
+    checkedAt: checkedAt.toString(),
+    expiresAt: expiresAt.toString(),
+  };
+
+  const signature = await deliveryAttesterWallet().signTypedData(
+    signingDomain(),
+    NO_DELIVERY_ATTESTATION_TYPES,
+    value
+  );
+
+  return {
+    checked_at: checkedAt,
+    expires_at: expiresAt,
+    no_delivery_attester_signature: signature,
+    refund_with_no_delivery_attestation_args: {
+      job_id: value.jobId,
+      checked_at: checkedAt,
+      expires_at: expiresAt,
+      no_delivery_attester_signature: signature,
+    },
   };
 }

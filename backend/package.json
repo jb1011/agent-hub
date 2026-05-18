@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "prebuild": "prisma generate",
+    "prebuild": "node scripts/check-node-version.cjs && prisma generate",
     "build": "tsc",
     "start": "node dist/index.js",
     "db:generate": "prisma generate",
@@ -13,7 +13,7 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
-    "postinstall": "prisma generate"
+    "postinstall": "node scripts/check-node-version.cjs && prisma generate"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
