@@ -118,8 +118,24 @@ function readArtifact(contractName: string): FoundryArtifact {
 }
 
 function readJsonFile<T>(filePath: string): T {
-  const resolvedPath = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+  const resolvedPath = resolveJsonFilePath(filePath);
   return JSON.parse(fs.readFileSync(resolvedPath, "utf8")) as T;
+}
+
+function resolveJsonFilePath(filePath: string): string {
+  if (path.isAbsolute(filePath)) return filePath;
+
+  const candidates = [
+    path.resolve(process.cwd(), filePath),
+    path.resolve(ROOT, filePath)
+  ];
+
+  if (path.dirname(filePath) === ".") {
+    candidates.push(path.resolve(ROOT, "args", filePath));
+  }
+
+  const resolvedPath = candidates.find((candidate) => fs.existsSync(candidate));
+  return resolvedPath ?? candidates[0];
 }
 
 function parseCliInput(): { providerMetadata: ProviderMetadata; serviceMetadata: ServiceMetadata } {

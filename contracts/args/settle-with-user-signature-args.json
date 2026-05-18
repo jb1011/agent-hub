@@ -1,0 +1,8 @@
+{
+  "settle_with_user_signature_args": {
+    "job_id": "6",
+    "output_commitment": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "expires_at": 1893456000,
+    "user_signature": "0xf34b7e491b3c6ee1147284fd1258e9f8a46a75307c54a19f400de4be14c6d3526423b7653b3ff1ed602ec79c34701e7ed2a989134df72123efaeed4c6ea751871c"
+  }
+}

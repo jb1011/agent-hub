@@ -83,7 +83,77 @@ $ npm run create-job -- '{"create_job_args":{"service_id":"1","request_id":"0x42
 For larger payloads, use a JSON file:
 
 ```shell
-$ npm run create-job -- --file create-job-args.json
+$ npm run create-job -- --file args/create-job-args.json
+```
+
+### Generate Provider Signature
+
+Set `WALLET_PROVIDER_PRIVATE_KEY` in `.env`, then sign a backend `typed_data` payload from `POST /jobs/:id/start-authorization-request`:
+
+```shell
+$ npm run generate-provider-signature -- --file args/start-job-typed-data.json
+```
+
+The script prints JSON with `start_job_args.provider_signature` added. To write it to a file:
+
+```shell
+$ npm run generate-provider-signature -- --file args/start-job-typed-data.json --out args/start-job-args.json
+```
+
+### Start Job
+
+Set `RPC_URL` and `WALLET_PROVIDER_PRIVATE_KEY` in `.env`. `AGENT_HUB_ESCROW_ADDRESS` is optional when `deployments/<chainId>.json` exists.
+
+Then pass either the signed payload from `generate-provider-signature` or the nested `start_job_args` object:
+
+```shell
+$ npm run start-job -- '{"start_job_args":{"job_id":"4","expires_at":1893456000,"provider_signature":"0xd4594491327d21e1df49e8cfe779a505ef502b628656dd3cdc6e36e9454c84f86b531080fdfa70f880193bd22ad67d4a3dccf3bb87769d93e9f252d914082a161b"}}'
+```
+
+For larger payloads, use a JSON file:
+
+```shell
+$ npm run start-job -- --file args/start-job-args.json
+```
+
+### Refund With No Delivery Attestation
+
+Set `RPC_URL` and `WALLET_USER_PRIVATE_KEY` in `.env`. `AGENT_HUB_ESCROW_ADDRESS` is optional when `deployments/<chainId>.json` exists.
+
+Then pass either the full API response object or the nested `refund_with_no_delivery_attestation_args` object:
+
+```shell
+$ npm run refund-with-no-delivery-attestation -- '{"refund_with_no_delivery_attestation_args":{"job_id":"4","checked_at":1779041199,"expires_at":1779044799,"no_delivery_attester_signature":"0x822b95632aff6e7228599457d7cde0fa9df7539a0313870fccfb2ca1a4e524197c923cf10feac38a3672e6f15a2aaebd1ee6499fd4f1406af1aab04c61b0344c1c"}}'
+```
+
+For larger payloads, use a JSON file:
+
+```shell
+$ npm run refund-with-no-delivery-attestation -- --file args/refund-with-no-delivery-attestation-args.json
+```
+
+### Generate User Signature
+
+Set `WALLET_USER_PRIVATE_KEY` in `.env`, then sign a backend `typed_data` payload:
+
+```shell
+$ npm run generate-user-signature -- --file args/settle-with-user-signature-typed-data.json
+```
+
+The script prints JSON with `settle_with_user_signature_args.user_signature` added. To write it to a file:
+
+```shell
+$ npm run generate-user-signature -- --file args/settle-with-user-signature-typed-data.json --out args/settle-with-user-signature-args.json
+```
+
+### Settle With User Signature
+
+Set `RPC_URL` and `WALLET_PROVIDER_PRIVATE_KEY` in `.env`. `AGENT_HUB_ESCROW_ADDRESS` is optional when `deployments/<chainId>.json` exists.
+
+Then pass either the full API response object or the nested `settle_with_user_signature_args` object:
+
+```shell
+$ npm run settle-with-user-signature -- --file args/settle-with-user-signature-args.json
 ```
 
 ### Register Provider And Service

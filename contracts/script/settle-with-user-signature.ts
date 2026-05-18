@@ -14,22 +14,16 @@ type Deployment = {
   };
 };
 
-type Service = {
-  price: BigNumber;
-};
-
-type CreateJobArgs = {
-  service_id: string | number;
-  request_id: string;
-  input_commitment: string;
-  queue_timeout_seconds: string | number;
+type SettleWithUserSignatureArgs = {
+  job_id: string | number;
+  output_commitment: string;
   expires_at: string | number;
-  delivery_attester_signature: string;
+  user_signature: string;
 };
 
-type CreateJobInput = {
-  create_job_args?: CreateJobArgs;
-} & Partial<CreateJobArgs>;
+type SettleWithUserSignatureInput = {
+  settle_with_user_signature_args?: SettleWithUserSignatureArgs;
+} & Partial<SettleWithUserSignatureArgs>;
 
 type EthersError = {
   reason?: string;
@@ -37,25 +31,28 @@ type EthersError = {
   error?: EthersError;
 };
 
+type Job = {
+  providerId: BigNumber;
+  serviceId: BigNumber;
+  workDeadline: BigNumber;
+  finalRefundDeadline: BigNumber;
+  status: number;
+  inputCommitment: string;
+};
+
 const ROOT = path.resolve(__dirname, "..");
-const ERC20_ABI = [
-  "function allowance(address owner, address spender) view returns (uint256)",
-  "function approve(address spender, uint256 amount) returns (bool)",
-  "function balanceOf(address account) view returns (uint256)",
-  "function decimals() view returns (uint8)",
-  "function symbol() view returns (string)"
-];
 const USAGE = [
   "Usage:",
-  "  npm run create-job -- '{\"create_job_args\":{...}}'",
-  "  npm run create-job -- --file args/create-job-args.json",
+  "  npm run settle-with-user-signature -- '{\"settle_with_user_signature_args\":{...}}'",
+  "  npm run settle-with-user-signature -- --file args/settle-with-user-signature-args.json",
   "",
   "Env:",
   "  RPC_URL",
-  "  WALLET_USER_PRIVATE_KEY",
+  "  WALLET_PROVIDER_PRIVATE_KEY",
   "  AGENT_HUB_ESCROW_ADDRESS or ESCROW_CONTRACT_ADDRESS (optional if deployments/<chainId>.json exists)"
 ].join("\n");
 const MAX_SAFE_INTEGER_BN = BigNumber.from(Number.MAX_SAFE_INTEGER.toString());
+const JOB_STATUSES = ["NONE", "FUNDED", "RUNNING", "SETTLED", "REFUNDED"];
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -121,58 +118,46 @@ function parseCliInput(): unknown {
   return JSON.parse(args.join(" "));
 }
 
-function asCreateJobArgs(input: unknown): CreateJobArgs {
+function asSettleArgs(input: unknown): SettleWithUserSignatureArgs {
   if (typeof input !== "object" || input === null) {
     throw new Error("Input must be a JSON object");
   }
 
-  const objectInput = input as CreateJobInput;
-  const args = objectInput.create_job_args ?? objectInput;
-
-  const requiredFields: Array<keyof CreateJobArgs> = [
-    "service_id",
-    "request_id",
-    "input_commitment",
-    "queue_timeout_seconds",
+  const objectInput = input as SettleWithUserSignatureInput;
+  const args = objectInput.settle_with_user_signature_args ?? objectInput;
+  const requiredFields: Array<keyof SettleWithUserSignatureArgs> = [
+    "job_id",
+    "output_commitment",
     "expires_at",
-    "delivery_attester_signature"
+    "user_signature"
   ];
 
   for (const field of requiredFields) {
     if (args[field] === undefined || args[field] === null || `${args[field]}`.trim() === "") {
-      throw new Error(`Missing create_job_args.${field}`);
+      throw new Error(`Missing settle_with_user_signature_args.${field}`);
     }
   }
 
-  if (!utils.isHexString(args.request_id, 32)) {
-    throw new Error("create_job_args.request_id must be bytes32");
+  if (!utils.isHexString(args.output_commitment, 32)) {
+    throw new Error("settle_with_user_signature_args.output_commitment must be bytes32");
   }
-  if (!utils.isHexString(args.input_commitment, 32)) {
-    throw new Error("create_job_args.input_commitment must be bytes32");
+  if (args.output_commitment === utils.hexZeroPad("0x", 32)) {
+    throw new Error("settle_with_user_signature_args.output_commitment must be non-zero");
   }
-  if (!utils.isHexString(args.delivery_attester_signature)) {
-    throw new Error("create_job_args.delivery_attester_signature must be hex bytes");
+  if (!utils.isHexString(args.user_signature)) {
+    throw new Error("settle_with_user_signature_args.user_signature must be hex bytes");
   }
 
-  return args as CreateJobArgs;
+  return args as SettleWithUserSignatureArgs;
 }
 
 function asUint(value: string | number, fieldName: string): BigNumber {
   const raw = String(value);
   if (!/^\d+$/.test(raw)) {
-    throw new Error(`create_job_args.${fieldName} must be a non-negative integer`);
+    throw new Error(`settle_with_user_signature_args.${fieldName} must be a non-negative integer`);
   }
 
   return BigNumber.from(raw);
-}
-
-function asUint64(value: string | number, fieldName: string): number {
-  const raw = Number(value);
-  if (!Number.isSafeInteger(raw) || raw < 0) {
-    throw new Error(`create_job_args.${fieldName} must be a non-negative safe integer`);
-  }
-
-  return raw;
 }
 
 function formatUnixSeconds(value: BigNumber): string {
@@ -180,15 +165,20 @@ function formatUnixSeconds(value: BigNumber): string {
   return new Date(value.toNumber() * 1000).toISOString();
 }
 
-function getUserPrivateKey(): string {
-  const privateKey = firstEnv(["WALLET_USER_PRIVATE_KEY", "USER_PRIVATE_KEY"]);
+function getProviderPrivateKey(): string {
+  const privateKey = firstEnv([
+    "WALLET_PROVIDER_PRIVATE_KEY",
+    "PROVIDER_PRIVATE_KEY",
+    "WALLET_PROVIDER",
+    "wallet_provider"
+  ]);
   if (!privateKey) {
-    throw new Error("Missing required env var: WALLET_USER_PRIVATE_KEY");
+    throw new Error("Missing required env var: WALLET_PROVIDER_PRIVATE_KEY");
   }
 
   const normalizedPrivateKey = privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
   if (!utils.isHexString(normalizedPrivateKey, 32)) {
-    throw new Error("WALLET_USER_PRIVATE_KEY must be a 32-byte hex private key");
+    throw new Error("WALLET_PROVIDER_PRIVATE_KEY must be a 32-byte hex private key");
   }
 
   return normalizedPrivateKey;
@@ -242,128 +232,76 @@ function explainContractError(error: EthersError, contractInterface: utils.Inter
     const args = parsedError.args.length > 0
       ? `(${parsedError.args.map((arg) => arg.toString()).join(", ")})`
       : "";
-    return new Error(`AgentHubEscrow.createJob would revert: ${parsedError.name}${args}`);
+    return new Error(`AgentHubEscrow.settleWithUserSignature would revert: ${parsedError.name}${args}`);
   } catch {
     return new Error(`Transaction simulation failed with raw revert data: ${data}`);
   }
 }
 
-async function readOptionalTokenString(token: Contract, field: "symbol"): Promise<string> {
-  try {
-    return await token[field]();
-  } catch {
-    return "token";
-  }
-}
-
-async function readOptionalTokenDecimals(token: Contract): Promise<number> {
-  try {
-    return await token.decimals();
-  } catch {
-    return 0;
-  }
-}
-
-async function ensurePaymentAllowance(
-  escrow: Contract,
-  wallet: Wallet,
-  userAddress: string,
-  serviceId: BigNumber,
-  escrowAddress: string
-): Promise<void> {
-  const paymentTokenAddress = await escrow.paymentToken();
-  const registryAddress = await escrow.registry();
-  const registryArtifact = readArtifact("AgentHubRegistry");
-  const registry = new Contract(registryAddress, registryArtifact.abi, wallet);
-  const service = await registry.getService(serviceId) as Service;
-  const token = new Contract(paymentTokenAddress, ERC20_ABI, wallet);
-  const [symbol, decimals, allowance, balance] = await Promise.all([
-    readOptionalTokenString(token, "symbol"),
-    readOptionalTokenDecimals(token),
-    token.allowance(userAddress, escrowAddress) as Promise<BigNumber>,
-    token.balanceOf(userAddress) as Promise<BigNumber>
-  ]);
-
-  console.log(`Payment token: ${paymentTokenAddress}`);
-  console.log(`Service price: ${utils.formatUnits(service.price, decimals)} ${symbol} (${service.price.toString()})`);
-  console.log(`Current allowance: ${utils.formatUnits(allowance, decimals)} ${symbol} (${allowance.toString()})`);
-
-  if (balance.lt(service.price)) {
-    throw new Error(
-      `Insufficient ${symbol} balance. ` +
-        `Need ${utils.formatUnits(service.price, decimals)}, ` +
-        `wallet has ${utils.formatUnits(balance, decimals)}.`
-    );
-  }
-
-  if (allowance.gte(service.price)) {
-    console.log("Allowance is sufficient; skipping approve.");
-    return;
-  }
-
-  console.log(`Approving ${utils.formatUnits(service.price, decimals)} ${symbol} for escrow...`);
-  const txArgs = [escrowAddress, service.price] as const;
-  await token.callStatic.approve(...txArgs);
-  const estimatedGas = await token.estimateGas.approve(...txArgs);
-  const tx = await token.approve(...txArgs, { gasLimit: estimatedGas.mul(120).div(100) });
-
-  console.log(`Approve transaction sent: ${tx.hash}`);
-  const receipt = await tx.wait();
-  console.log(`Approve transaction confirmed in block ${receipt.blockNumber}`);
-}
-
 async function main(): Promise<void> {
-  const createJobArgs = asCreateJobArgs(parseCliInput());
+  const settleArgs = asSettleArgs(parseCliInput());
   const provider = new providers.JsonRpcProvider(requiredEnv("RPC_URL"));
-  const wallet = new Wallet(getUserPrivateKey(), provider);
+  const wallet = new Wallet(getProviderPrivateKey(), provider);
   const network = await provider.getNetwork();
   const escrowAddress = getEscrowAddress(network.chainId);
   const artifact = readArtifact("AgentHubEscrow");
   const escrow = new Contract(escrowAddress, artifact.abi, wallet);
 
-  const userAddress = await wallet.getAddress();
-  const serviceId = asUint(createJobArgs.service_id, "service_id");
-  const requestId = createJobArgs.request_id;
-  const inputCommitment = createJobArgs.input_commitment;
-  const queueTimeoutSeconds = asUint64(createJobArgs.queue_timeout_seconds, "queue_timeout_seconds");
-  const expiresAt = asUint(createJobArgs.expires_at, "expires_at");
-  const signature = createJobArgs.delivery_attester_signature;
+  const callerAddress = await wallet.getAddress();
+  const jobId = asUint(settleArgs.job_id, "job_id");
+  const outputCommitment = settleArgs.output_commitment;
+  const expiresAt = asUint(settleArgs.expires_at, "expires_at");
+  const userSignature = settleArgs.user_signature;
   const latestBlock = await provider.getBlock("latest");
+  const job = await escrow.getJob(jobId) as Job;
+  const statusName = JOB_STATUSES[job.status] ?? `UNKNOWN(${job.status})`;
 
-  console.log(`Calling AgentHubEscrow.createJob on chain ${network.chainId}`);
+  console.log(`Calling AgentHubEscrow.settleWithUserSignature on chain ${network.chainId}`);
   console.log(`Escrow: ${escrowAddress}`);
-  console.log(`User wallet: ${userAddress}`);
+  console.log(`Provider wallet: ${callerAddress}`);
+  console.log(`Job: ${jobId.toString()}`);
+  console.log(`Provider: ${job.providerId.toString()}`);
+  console.log(`Service: ${job.serviceId.toString()}`);
+  console.log(`Status: ${statusName}`);
+  console.log(`Output commitment: ${outputCommitment}`);
+  console.log(`Work deadline: ${formatUnixSeconds(job.workDeadline)} (${job.workDeadline.toString()})`);
   console.log(`Authorization expires at: ${formatUnixSeconds(expiresAt)} (${expiresAt.toString()})`);
+
+  if (job.status !== 2) {
+    throw new Error(`Job ${jobId.toString()} must be RUNNING before settlement; current status is ${statusName}.`);
+  }
 
   if (expiresAt.lte(latestBlock.timestamp)) {
     throw new Error(
-      `create_job_args.expires_at is expired for latest block timestamp ${latestBlock.timestamp}. ` +
-        "Generate fresh create_job_args from the backend before calling createJob."
+      `settle_with_user_signature_args.expires_at is expired for latest block timestamp ${latestBlock.timestamp}. ` +
+        "Generate fresh settle_with_user_signature_args from the backend before calling settleWithUserSignature."
     );
   }
 
-  await ensurePaymentAllowance(escrow, wallet, userAddress, serviceId, escrowAddress);
-
-  const txArgs = [serviceId, requestId, inputCommitment, queueTimeoutSeconds, expiresAt, signature] as const;
+  const txArgs = [jobId, outputCommitment, expiresAt, userSignature] as const;
   let gasLimit: BigNumber;
   try {
-    await escrow.callStatic.createJob(...txArgs);
-    const estimatedGas = await escrow.estimateGas.createJob(...txArgs);
+    await escrow.callStatic.settleWithUserSignature(...txArgs);
+    const estimatedGas = await escrow.estimateGas.settleWithUserSignature(...txArgs);
     gasLimit = estimatedGas.mul(120).div(100);
   } catch (error) {
     throw explainContractError(error as EthersError, escrow.interface);
   }
 
-  const tx = await escrow.createJob(...txArgs, { gasLimit });
+  const tx = await escrow.settleWithUserSignature(...txArgs, { gasLimit });
 
   console.log(`Transaction sent: ${tx.hash}`);
   const receipt = await tx.wait();
   console.log(`Transaction confirmed in block ${receipt.blockNumber}`);
 
-  const jobCreated = receipt.events?.find((event: { event?: string }) => event.event === "JobCreated");
-  const jobId = jobCreated?.args?.jobId;
-  if (jobId) {
-    console.log(`Job created: ${jobId.toString()}`);
+  const settled = receipt.events?.find(
+    (event: { event?: string }) => event.event === "JobSettledWithUserSignature"
+  );
+  if (settled?.args) {
+    console.log(`Job settled: ${settled.args.jobId.toString()}`);
+    console.log(`Provider payout wallet: ${settled.args.providerPayoutWallet}`);
+    console.log(`Provider amount: ${settled.args.providerAmount.toString()}`);
+    console.log(`Protocol fee: ${settled.args.protocolFee.toString()}`);
   }
 }
 
