@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "name": "Skill Hub API",
-    "description": "Fastify backend collection for providers, services, jobs, and escrows. Import it and set the `baseUrl` variable if needed.",
+    "description": "Fastify backend collection for providers, services, and jobs. Import it and set the `baseUrl` variable if needed.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,13 +10,11 @@
     { "key": "providerId", "value": "1" },
     { "key": "serviceId", "value": "1" },
     { "key": "jobId", "value": "" },
-    { "key": "onchainJobId", "value": "1" },
     { "key": "inputCommitment", "value": "0x1111111111111111111111111111111111111111111111111111111111111111" },
     { "key": "outputCommitment", "value": "0x2222222222222222222222222222222222222222222222222222222222222222" },
     { "key": "signatureExpiresAt", "value": "1893456000" },
     { "key": "providerSignature", "value": "0x" },
-    { "key": "userSignature", "value": "0x" },
-    { "key": "escrowId", "value": "" }
+    { "key": "userSignature", "value": "0x" }
   ],
   "item": [
     {
@@ -175,19 +173,6 @@
           }
         },
         {
-          "name": "Link on-chain job id",
-          "request": {
-            "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"job_id\": \"{{onchainJobId}}\"\n}"
-            },
-            "url": "{{baseUrl}}/jobs/{{jobId}}/onchain-job",
-            "description": "`jobId` can be the backend `request_id`. `onchainJobId` is the job id emitted by the escrow contract."
-          }
-        },
-        {
           "name": "Start authorization request",
           "request": {
             "method": "POST",
@@ -214,29 +199,16 @@
           }
         },
         {
-          "name": "Delivery attestation",
+          "name": "Job finish",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"output_uri\": \"ipfs://output\",\n  \"output_commitment\": \"{{outputCommitment}}\",\n  \"expires_in_seconds\": 3600\n}"
+              "raw": "{\n  \"output\": { \"result\": \"ok\" },\n  \"output_uri\": \"ipfs://output\",\n  \"output_commitment\": \"{{outputCommitment}}\",\n  \"expires_in_seconds\": 3600\n}"
             },
-            "url": "{{baseUrl}}/jobs/{{jobId}}/delivery-attestation",
-            "description": "Signs the delivery attestation. If `output_commitment` is omitted, the backend derives a commitment from `output_hash` or `output_uri`."
-          }
-        },
-        {
-          "name": "No delivery attestation",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"expires_in_seconds\": 3600\n}"
-            },
-            "url": "{{baseUrl}}/jobs/{{jobId}}/no-delivery-attestation",
-            "description": "Call this after `work_deadline` if the provider did not deliver. Returns the arguments for `refundWithNoDeliveryAttestation`."
+            "url": "{{baseUrl}}/jobs/{{jobId}}/job-finish",
+            "description": "Called by the provider when the job is finished. The backend performs minimal output schema validation, signs and stores the DeliveryAttestation, then returns the settlement arguments. NoDeliveryAttestations are emitted automatically by the backend after `work_deadline`."
           }
         },
         {
@@ -281,101 +253,6 @@
             "header": [],
             "url": "{{baseUrl}}/jobs/{{jobId}}/refund-after-final-timeout",
             "description": "Returns the arguments for `refundAfterFinalTimeout` after the final refund deadline has expired."
-          }
-        },
-        {
-          "name": "Patch job status",
-          "request": {
-            "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"FUNDED\",\n  \"output_uri\": null,\n  \"output_hash\": null,\n  \"error_message\": null\n}"
-            },
-            "url": "{{baseUrl}}/jobs/{{jobId}}/status",
-            "description": "Set `status` according to the allowed backend transitions."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Escrows",
-      "item": [
-        {
-          "name": "Get escrow by id",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/escrows/{{escrowId}}"
-          }
-        },
-        {
-          "name": "Get escrow by job",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/jobs/{{jobId}}/escrow"
-          }
-        },
-        {
-          "name": "Create escrow",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"request_id\": \"{{jobId}}\",\n  \"chain_id\": 1,\n  \"token_address\": \"0x0000000000000000000000000000000000000000\",\n  \"escrow_contract\": \"0x0000000000000000000000000000000000000000\",\n  \"amount_usdc\": 10,\n  \"platform_fee_usdc\": 0.5,\n  \"provider_payout_usdc\": 9.5\n}"
-            },
-            "url": "{{baseUrl}}/escrows"
-          }
-        },
-        {
-          "name": "Fund escrow",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fund_tx_hash\": \"0xabc\"\n}"
-            },
-            "url": "{{baseUrl}}/escrows/{{escrowId}}/fund"
-          }
-        },
-        {
-          "name": "Release escrow",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"release_tx_hash\": \"0xdef\"\n}"
-            },
-            "url": "{{baseUrl}}/escrows/{{escrowId}}/release"
-          }
-        },
-        {
-          "name": "Refund escrow",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refund_tx_hash\": \"0x789\"\n}"
-            },
-            "url": "{{baseUrl}}/escrows/{{escrowId}}/refund"
-          }
-        },
-        {
-          "name": "Dispute escrow",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{}"
-            },
-            "url": "{{baseUrl}}/escrows/{{escrowId}}/dispute",
-            "description": "The API ignores the body; it is present only so Postman sends a valid request body."
           }
         }
       ]

@@ -3,12 +3,27 @@ import type {
   JobWithDetails,
   CreateJobInput,
   CreateJobResult,
-  TransitionJobStatusInput,
   ListJobsQuery,
+  AuthorizationExpiryInput,
+  StartAuthorizationRequestResult,
+  StartJobInput,
+  StartJobResult,
+  FinishJobInput,
+  FinishJobResult,
+  OutputCommitmentInput,
+  AcceptanceRequestResult,
+  SettleWithUserSignatureInput,
+  SettleWithUserSignatureResult,
+  RefundAfterQueueTimeoutResult,
+  RefundAfterFinalTimeoutResult,
 } from "./types.js";
 
 export class JobsResource {
   constructor(private readonly request: <T>(path: string, init?: RequestInit) => Promise<T>) {}
+
+  private path(id: string, suffix = ""): string {
+    return `/jobs/${encodeURIComponent(id)}${suffix}`;
+  }
 
   /**
    * List jobs with optional filters.
@@ -30,7 +45,7 @@ export class JobsResource {
    * GET /jobs/:id
    */
   get(id: string): Promise<JobWithDetails> {
-    return this.request<JobWithDetails>(`/jobs/${id}`);
+    return this.request<JobWithDetails>(this.path(id));
   }
 
   /**
@@ -45,34 +60,100 @@ export class JobsResource {
   }
 
   /**
-   * Link an on-chain job_id to an existing job request.
-   * PATCH /jobs/:id/onchain-job
+   * Build the EIP-712 payload the provider signs before startJob.
+   * POST /jobs/:id/start-authorization-request
    */
-  linkOnchainJob(id: string, jobId: string): Promise<Job> {
-    return this.request<Job>(`/jobs/${id}/onchain-job`, {
-      method: "PATCH",
-      body: JSON.stringify({ job_id: jobId }),
+  requestStartAuthorization(
+    id: string,
+    input: AuthorizationExpiryInput = {}
+  ): Promise<StartAuthorizationRequestResult> {
+    return this.request<StartAuthorizationRequestResult>(
+      this.path(id, "/start-authorization-request"),
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      }
+    );
+  }
+
+  /**
+   * Return startJob calldata arguments after the provider signed StartJobAuthorization.
+   * POST /jobs/:id/start-job
+   */
+  startJob(id: string, input: StartJobInput): Promise<StartJobResult> {
+    return this.request<StartJobResult>(this.path(id, "/start-job"), {
+      method: "POST",
+      body: JSON.stringify(input),
     });
   }
 
   /**
-   * Transition a job's status.
-   * PATCH /jobs/:id/status
-   *
-   * Valid transitions:
-   *   CREATED → FUNDED | EXPIRED
-   *   FUNDED  → RUNNING | REFUNDED | EXPIRED
-   *   RUNNING → SUBMITTED | FAILED | EXPIRED
-   *   SUBMITTED → ACCEPTED | DISPUTED | EXPIRED
-   *   ACCEPTED → SETTLED | DISPUTED
-   *   FAILED → REFUNDED
-   *   EXPIRED → REFUNDED
-   *   DISPUTED → SETTLED | REFUNDED
+   * Finish a running job, validate provider output, and return DeliveryAttestation.
+   * POST /jobs/:id/job-finish
    */
-  transitionStatus(id: string, input: TransitionJobStatusInput): Promise<Job> {
-    return this.request<Job>(`/jobs/${id}/status`, {
-      method: "PATCH",
+  finishJob(
+    id: string,
+    input: FinishJobInput
+  ): Promise<FinishJobResult> {
+    return this.request<FinishJobResult>(
+      this.path(id, "/job-finish"),
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      }
+    );
+  }
+
+  /**
+   * Build the EIP-712 payload the user signs to accept output.
+   * POST /jobs/:id/acceptance-request
+   */
+  requestAcceptance(
+    id: string,
+    input: OutputCommitmentInput
+  ): Promise<AcceptanceRequestResult> {
+    return this.request<AcceptanceRequestResult>(this.path(id, "/acceptance-request"), {
+      method: "POST",
       body: JSON.stringify(input),
     });
+  }
+
+  /**
+   * Return settleWithUserSignature calldata arguments.
+   * POST /jobs/:id/settle-with-user-signature
+   */
+  settleWithUserSignature(
+    id: string,
+    input: SettleWithUserSignatureInput
+  ): Promise<SettleWithUserSignatureResult> {
+    return this.request<SettleWithUserSignatureResult>(
+      this.path(id, "/settle-with-user-signature"),
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      }
+    );
+  }
+
+  /**
+   * Return refundAfterQueueTimeout calldata arguments after queue deadline.
+   * POST /jobs/:id/refund-after-queue-timeout
+   */
+  refundAfterQueueTimeout(id: string): Promise<RefundAfterQueueTimeoutResult> {
+    return this.request<RefundAfterQueueTimeoutResult>(
+      this.path(id, "/refund-after-queue-timeout"),
+      { method: "POST" }
+    );
+  }
+
+  /**
+   * Return refundAfterFinalTimeout calldata arguments after final refund deadline.
+   * POST /jobs/:id/refund-after-final-timeout
+   */
+  refundAfterFinalTimeout(id: string): Promise<RefundAfterFinalTimeoutResult> {
+    return this.request<RefundAfterFinalTimeoutResult>(
+      this.path(id, "/refund-after-final-timeout"),
+      { method: "POST" }
+    );
   }
 }

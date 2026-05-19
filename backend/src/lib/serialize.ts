@@ -65,6 +65,9 @@ export function serializeJob(j: Job) {
     review_deadline: dt(j.review_deadline),
     final_refund_deadline: dt(j.final_refund_deadline),
     delivered_at: dt(j.delivered_at),
+    delivery_attestation: j.delivery_attestation,
+    no_delivery_attestation: j.no_delivery_attestation,
+    no_delivery_attested_at: dt(j.no_delivery_attested_at),
     error_message: j.error_message,
   };
 }

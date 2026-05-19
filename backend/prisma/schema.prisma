@@ -110,6 +110,9 @@ model Job {
   review_deadline       DateTime?
   final_refund_deadline DateTime?
   delivered_at          DateTime?
+  delivery_attestation    Json?
+  no_delivery_attestation Json?
+  no_delivery_attested_at DateTime?
   error_message         String?
 
   escrow Escrow?

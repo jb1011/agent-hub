@@ -31,6 +31,18 @@ console.log(health); // { ok: true }
 
 Calls `GET /health` and returns `{ ok: boolean }`.
 
+### Resources
+
+The SDK mirrors the REST API resources:
+
+| Resource | Methods |
+| -------- | ------- |
+| `client.providers` | `list`, `get`, `create`, `update`, `delete` |
+| `client.services` | `list`, `get`, `create`, `update`, `delete` |
+| `client.jobs` | `list`, `get`, `create`, `requestStartAuthorization`, `startJob`, `finishJob`, `requestAcceptance`, `settleWithUserSignature`, `refundAfterQueueTimeout`, `refundAfterFinalTimeout` |
+
+`client.jobs.finishJob(id, input)` maps to `POST /jobs/:id/job-finish`. The API no longer exposes direct DeliveryAttestation or NoDeliveryAttestation endpoints: `finishJob` returns the DeliveryAttestation when provider output is valid, and NoDeliveryAttestations are emitted automatically by the backend after `work_deadline`.
+
 ---
 
 ## Local development (without publishing)

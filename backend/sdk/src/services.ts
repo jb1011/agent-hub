@@ -26,7 +26,7 @@ export class ServicesResource {
    * GET /services/:id
    */
   get(serviceId: string): Promise<ServiceWithProvider> {
-    return this.request<ServiceWithProvider>(`/services/${serviceId}`);
+    return this.request<ServiceWithProvider>(`/services/${encodeURIComponent(serviceId)}`);
   }
 
   /**
@@ -45,10 +45,19 @@ export class ServicesResource {
    * PATCH /services/:id
    */
   update(serviceId: string, input: UpdateServiceInput): Promise<Service> {
-    return this.request<Service>(`/services/${serviceId}`, {
+    return this.request<Service>(`/services/${encodeURIComponent(serviceId)}`, {
       method: "PATCH",
       body: JSON.stringify(input),
     });
   }
 
+  /**
+   * Delete a service.
+   * DELETE /services/:id
+   */
+  delete(serviceId: string): Promise<void> {
+    return this.request<void>(`/services/${encodeURIComponent(serviceId)}`, {
+      method: "DELETE",
+    });
+  }
 }

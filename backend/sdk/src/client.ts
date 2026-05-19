@@ -2,7 +2,6 @@ import type { HealthResponse, SkillHubClientOptions } from "./types.js";
 import { ProvidersResource } from "./providers.js";
 import { ServicesResource } from "./services.js";
 import { JobsResource } from "./jobs.js";
-import { EscrowsResource } from "./escrows.js";
 
 export class SkillHubClient {
   private baseUrl: string;
@@ -16,15 +15,11 @@ export class SkillHubClient {
   /** Job lifecycle operations */
   readonly jobs: JobsResource;
 
-  /** Escrow fund / release / refund / dispute flows */
-  readonly escrows: EscrowsResource;
-
   constructor(options: SkillHubClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? "http://localhost:3000").replace(/\/$/, "");
     this.providers = new ProvidersResource(this.request.bind(this));
     this.services = new ServicesResource(this.request.bind(this));
     this.jobs = new JobsResource(this.request.bind(this));
-    this.escrows = new EscrowsResource(this.request.bind(this));
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {

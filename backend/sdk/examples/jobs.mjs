@@ -8,16 +8,14 @@
  *   list       [status]
  *   get        <request_id|job_id>
  *   create     <user_wallet> <service_id>
- *   link       <request_id> <job_id>
- *   status     <request_id|job_id> <new_status>
+ *   finish     <request_id|job_id> <output_json> [output_uri]
  *
  * Examples:
  *   node examples/jobs.mjs list
  *   node examples/jobs.mjs list FUNDED
  *   node examples/jobs.mjs get abc-123
  *   node examples/jobs.mjs create 0xUserWallet 10
- *   node examples/jobs.mjs link abc-123 42
- *   node examples/jobs.mjs status abc-123 RUNNING
+ *   node examples/jobs.mjs finish abc-123 '{"result":"ok"}' ipfs://output
  */
 
 import { SkillHubClient } from "../dist/index.js";
@@ -34,10 +32,7 @@ Usage: node examples/jobs.mjs <command> [args]
   list       [status]
   get        <request_id|job_id>
   create     <user_wallet> <service_id>
-  link       <request_id> <job_id>
-  status     <request_id|job_id> <new_status>
-
-Valid statuses: CREATED FUNDED RUNNING SUBMITTED ACCEPTED SETTLED FAILED EXPIRED REFUNDED DISPUTED
+  finish     <request_id|job_id> <output_json> [output_uri]
 `);
   process.exit(1);
 }
@@ -72,21 +67,15 @@ async function run() {
       break;
     }
 
-    case "link": {
-      const [id, job_id] = args;
-      if (!id || !job_id) usage();
-      const job = await client.jobs.linkOnchainJob(id, job_id);
-      console.log("\nLinked job:");
-      console.log(JSON.stringify(job, null, 2));
-      break;
-    }
-
-    case "status": {
-      const [id, status] = args;
-      if (!id || !status) usage();
-      const job = await client.jobs.transitionStatus(id, { status });
-      console.log(`\nJob status updated to ${job.status}:`);
-      console.log(JSON.stringify(job, null, 2));
+    case "finish": {
+      const [id, output_json, output_uri] = args;
+      if (!id || !output_json) usage();
+      const result = await client.jobs.finishJob(id, {
+        output: JSON.parse(output_json),
+        ...(output_uri ? { output_uri } : {}),
+      });
+      console.log("\nJob finished:");
+      console.log(JSON.stringify(result, null, 2));
       break;
     }
 

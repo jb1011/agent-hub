@@ -21,7 +21,7 @@ export class ProvidersResource {
    * GET /providers/:id
    */
   get(providerId: string): Promise<ProviderWithServices> {
-    return this.request<ProviderWithServices>(`/providers/${providerId}`);
+    return this.request<ProviderWithServices>(`/providers/${encodeURIComponent(providerId)}`);
   }
 
   /**
@@ -40,10 +40,19 @@ export class ProvidersResource {
    * PATCH /providers/:id
    */
   update(providerId: string, input: UpdateProviderInput): Promise<Provider> {
-    return this.request<Provider>(`/providers/${providerId}`, {
+    return this.request<Provider>(`/providers/${encodeURIComponent(providerId)}`, {
       method: "PATCH",
       body: JSON.stringify(input),
     });
   }
 
+  /**
+   * Delete a provider.
+   * DELETE /providers/:id
+   */
+  delete(providerId: string): Promise<void> {
+    return this.request<void>(`/providers/${encodeURIComponent(providerId)}`, {
+      method: "DELETE",
+    });
+  }
 }

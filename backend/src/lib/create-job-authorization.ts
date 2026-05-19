@@ -218,6 +218,7 @@ export function normalizeOutputCommitment(params: {
   outputCommitment?: string;
   outputHash?: string;
   outputUri?: string;
+  outputJson?: unknown;
 }): string {
   if (params.outputCommitment) {
     return normalizeBytes32(params.outputCommitment, "output_commitment");
@@ -231,6 +232,10 @@ export function normalizeOutputCommitment(params: {
 
   if (params.outputUri) {
     return keccak256(toUtf8Bytes(params.outputUri));
+  }
+
+  if (params.outputJson !== undefined) {
+    return keccak256(toUtf8Bytes(JSON.stringify(params.outputJson)));
   }
 
   throw new CreateJobAuthorizationError("output_commitment_is_required");

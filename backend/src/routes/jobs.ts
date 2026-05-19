@@ -1,9 +1,9 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { z } from "zod";
-import { JobStatus } from "@prisma/client";
+import { JobStatus, type Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { serializeJob, serializeEscrow } from "../lib/serialize.js";
-import { notFound, sendZodError, forbidden, conflict } from "../lib/http-errors.js";
+import { notFound, sendZodError, conflict } from "../lib/http-errors.js";
 import {
   buildJobAcceptance,
   buildStartJobAuthorization,
@@ -20,19 +20,6 @@ const JOB_STATUS = [
   "CREATED", "FUNDED", "RUNNING", "SUBMITTED",
   "ACCEPTED", "SETTLED", "FAILED", "EXPIRED", "REFUNDED", "DISPUTED",
 ] as const;
-
-const TRANSITIONS: Record<string, string[]> = {
-  CREATED:   ["FUNDED", "EXPIRED"],
-  FUNDED:    ["RUNNING", "REFUNDED", "EXPIRED"],
-  RUNNING:   ["SUBMITTED", "FAILED", "EXPIRED"],
-  SUBMITTED: ["ACCEPTED", "DISPUTED", "EXPIRED"],
-  ACCEPTED:  ["SETTLED", "DISPUTED"],
-  SETTLED:   [],
-  FAILED:    ["REFUNDED"],
-  EXPIRED:   ["REFUNDED"],
-  REFUNDED:  [],
-  DISPUTED:  ["SETTLED", "REFUNDED"],
-};
 
 const CAPACITY_JOB_STATUSES: JobStatus[] = [
   JobStatus.RUNNING,
@@ -56,17 +43,6 @@ const createSchema = z.object({
   review_deadline: z.string().datetime().optional(),
 });
 
-const transitionSchema = z.object({
-  status: z.enum(JOB_STATUS),
-  output_uri: z.string().optional(),
-  output_hash: z.string().optional(),
-  error_message: z.string().optional(),
-});
-
-const onchainJobSchema = z.object({
-  job_id: z.string().min(1),
-});
-
 const authExpirySchema = z.object({
   expires_at: z.number().int().positive().optional(),
   expires_in_seconds: z.number().int().positive().optional(),
@@ -83,15 +59,11 @@ const outputCommitmentSchema = authExpirySchema.extend({
 });
 
 const deliveryAttestationSchema = outputCommitmentSchema.extend({
-  delivered_at: z.number().int().positive().optional(),
+  output: z.unknown().optional(),
 });
 
 const userSignatureSchema = outputCommitmentSchema.extend({
   user_signature: z.string().min(1),
-});
-
-const noDeliveryAttestationSchema = authExpirySchema.extend({
-  checked_at: z.number().int().positive().optional(),
 });
 
 const idParamsSchema = z.object({ id: z.string().min(1) });
@@ -112,6 +84,9 @@ const jobResponseSchema = z.object({
   review_deadline: z.string().nullable(),
   final_refund_deadline: z.string().nullable(),
   delivered_at: z.string().nullable(),
+  delivery_attestation: z.unknown().nullable(),
+  no_delivery_attestation: z.unknown().nullable(),
+  no_delivery_attested_at: z.string().nullable(),
   funded_at: z.string().nullable(),
   started_at: z.string().nullable(),
   submitted_at: z.string().nullable(),
@@ -127,18 +102,6 @@ const listQuerySchema = z.object({
   service_id: uint256StringSchema("service_id").optional(),
   status: z.enum(JOB_STATUS).optional(),
 });
-
-function timestampForStatus(status: string): Record<string, Date> {
-  const now = new Date();
-  const map: Record<string, Record<string, Date>> = {
-    FUNDED:    { funded_at: now },
-    RUNNING:   { started_at: now },
-    SUBMITTED: { submitted_at: now },
-    ACCEPTED:  { accepted_at: now },
-    SETTLED:   { settled_at: now },
-  };
-  return map[status] ?? {};
-}
 
 function isStatus(status: JobStatus, statuses: readonly JobStatus[]): boolean {
   return statuses.includes(status);
@@ -198,6 +161,169 @@ function ensureOnchainJob(job: Awaited<ReturnType<typeof getJobWithService>>) {
     providerId: job.service.provider_id,
     serviceId: job.service_id,
     inputCommitment: job.input_hash,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function jsonType(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  if (Number.isInteger(value)) return "integer";
+  return typeof value;
+}
+
+function validateJsonSchemaShape(value: unknown, schema: unknown, path = "output"): string | null {
+  if (!isRecord(schema)) return null;
+
+  const expectedType = schema.type;
+  if (typeof expectedType === "string") {
+    const actualType = jsonType(value);
+    const valid =
+      expectedType === actualType ||
+      (expectedType === "number" && actualType === "integer");
+    if (!valid) return `${path}_must_be_${expectedType}`;
+  }
+
+  if (schema.required !== undefined) {
+    if (!Array.isArray(schema.required)) return `${path}_schema_required_must_be_array`;
+    if (!isRecord(value)) return `${path}_must_be_object`;
+    const missing = schema.required.find((field) => typeof field === "string" && !(field in value));
+    if (missing) return `${path}.${String(missing)}_is_required`;
+  }
+
+  if (isRecord(schema.properties) && isRecord(value)) {
+    for (const [key, childSchema] of Object.entries(schema.properties)) {
+      if (key in value) {
+        const error = validateJsonSchemaShape(value[key], childSchema, `${path}.${key}`);
+        if (error) return error;
+      }
+    }
+  }
+
+  if (schema.items !== undefined && Array.isArray(value)) {
+    for (let i = 0; i < value.length; i += 1) {
+      const error = validateJsonSchemaShape(value[i], schema.items, `${path}[${i}]`);
+      if (error) return error;
+    }
+  }
+
+  return null;
+}
+
+function buildDeliveryAttestationRecord(attestation: Awaited<ReturnType<typeof signDeliveryAttestation>>) {
+  return {
+    delivered_at: attestation.delivered_at,
+    expires_at: attestation.expires_at,
+    delivery_attester_signature: attestation.delivery_attester_signature,
+    settle_after_review_timeout_args: attestation.settle_after_review_timeout_args,
+  };
+}
+
+function buildNoDeliveryAttestationRecord(attestation: Awaited<ReturnType<typeof signNoDeliveryAttestation>>) {
+  return {
+    checked_at: attestation.checked_at,
+    expires_at: attestation.expires_at,
+    no_delivery_attester_signature: attestation.no_delivery_attester_signature,
+    refund_with_no_delivery_attestation_args: attestation.refund_with_no_delivery_attestation_args,
+  };
+}
+
+async function issueNoDeliveryAttestation(
+  job: NonNullable<Awaited<ReturnType<typeof getJobWithService>>>,
+  checkedAt = Math.floor(Date.now() / 1000)
+) {
+  if (job.status !== JobStatus.RUNNING || job.delivered_at || !job.work_deadline) return null;
+  if (checkedAt <= unixSeconds(job.work_deadline)) return null;
+
+  const attestation = await signNoDeliveryAttestation({
+    ...ensureOnchainJob(job),
+    checkedAt,
+  });
+  const attestationRecord = buildNoDeliveryAttestationRecord(attestation);
+  const checkedAtDate = dateFromUnixSeconds(attestation.checked_at);
+  const updated = await prisma.job.updateMany({
+    where: {
+      request_id: job.request_id,
+      status: JobStatus.RUNNING,
+      delivered_at: null,
+      work_deadline: { lt: checkedAtDate },
+    },
+    data: {
+      status: JobStatus.FAILED,
+      error_message: "no_delivery_attested",
+      no_delivery_attestation: attestationRecord as Prisma.InputJsonValue,
+      no_delivery_attested_at: checkedAtDate,
+    },
+  });
+
+  if (updated.count === 0) return null;
+
+  const updatedJob = await prisma.job.findUniqueOrThrow({
+    where: { request_id: job.request_id },
+  });
+
+  return {
+    job: updatedJob,
+    refund_with_no_delivery_attestation_args: attestation.refund_with_no_delivery_attestation_args,
+  };
+}
+
+export async function emitExpiredNoDeliveryAttestations(logger?: FastifyBaseLogger) {
+  const expiredJobs = await prisma.job.findMany({
+    where: {
+      status: JobStatus.RUNNING,
+      delivered_at: null,
+      work_deadline: { lt: new Date() },
+    },
+    include: { service: true },
+    orderBy: { work_deadline: "asc" },
+    take: 50,
+  });
+
+  let emitted = 0;
+  for (const job of expiredJobs) {
+    try {
+      const result = await issueNoDeliveryAttestation(job);
+      if (result) emitted += 1;
+    } catch (err) {
+      logger?.error({ err, requestId: job.request_id, jobId: job.job_id }, "Failed to emit NoDeliveryAttestation");
+    }
+  }
+
+  if (emitted > 0) {
+    logger?.info({ emitted }, "Expired running jobs received NoDeliveryAttestations");
+  }
+
+  return { scanned: expiredJobs.length, emitted };
+}
+
+export function startNoDeliveryAttestationWorker(logger: FastifyBaseLogger) {
+  if (process.env.NO_DELIVERY_ATTESTATION_WORKER_ENABLED === "false") {
+    logger.info("NoDeliveryAttestation worker disabled by NO_DELIVERY_ATTESTATION_WORKER_ENABLED=false");
+    return null;
+  }
+
+  const intervalMs = secondsFromEnv("NO_DELIVERY_ATTESTATION_WORKER_INTERVAL_SECONDS", 60) * 1000;
+  const run = () => {
+    void emitExpiredNoDeliveryAttestations(logger).catch((err) => {
+      logger.error({ err }, "NoDeliveryAttestation worker failed");
+    });
+  };
+
+  const timer = setInterval(run, intervalMs);
+  timer.unref();
+  run();
+
+  logger.info({ intervalMs }, "NoDeliveryAttestation worker started");
+
+  return {
+    close: async () => {
+      clearInterval(timer);
+      logger.info("NoDeliveryAttestation worker stopped");
+    },
   };
 }
 
@@ -350,39 +476,6 @@ export async function jobsRoutes(app: FastifyInstance) {
     }
   });
 
-  app.patch<{ Params: { id: string } }>("/jobs/:id/onchain-job", {
-    schema: {
-      tags: ["Jobs"],
-      summary: "Link an on-chain job_id to a request",
-      params: idParamsSchema,
-      body: onchainJobSchema,
-      response: {
-        200: jobResponseSchema,
-        400: z.object({ error: z.string(), details: z.unknown().optional() }),
-        404: z.object({ error: z.string() }),
-        409: z.object({ error: z.string() }),
-      },
-    },
-  }, async (req, reply) => {
-    const parsed = onchainJobSchema.safeParse(req.body);
-    if (!parsed.success) return sendZodError(reply, parsed.error);
-    const job = await prisma.job.findFirst({
-      where: { OR: [{ request_id: req.params.id }, { job_id: req.params.id }] },
-    });
-    if (!job) return notFound(reply);
-    const existing = await prisma.job.findUnique({
-      where: { job_id: parsed.data.job_id },
-    });
-    if (existing && existing.request_id !== job.request_id) {
-      return conflict(reply, "job_id_already_linked_to_another_request");
-    }
-    const updated = await prisma.job.update({
-      where: { request_id: job.request_id },
-      data: { job_id: parsed.data.job_id },
-    });
-    return reply.send(serializeJob(updated));
-  });
-
   app.post<{ Params: { id: string } }>("/jobs/:id/start-authorization-request", {
     schema: {
       tags: ["Jobs"],
@@ -473,14 +566,21 @@ export async function jobsRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post<{ Params: { id: string } }>("/jobs/:id/delivery-attestation", {
+  app.post<{ Params: { id: string } }>("/jobs/:id/job-finish", {
     schema: {
       tags: ["Jobs"],
-      summary: "Validate provider output and sign DeliveryAttestation",
+      summary: "Finish a running job, validate provider output, and return DeliveryAttestation",
       params: idParamsSchema,
       body: deliveryAttestationSchema,
       response: {
         200: jobResponseSchema.extend({
+          delivery_attestation: z.object({
+            job_id: z.string(),
+            output_commitment: z.string(),
+            delivered_at: z.number(),
+            expires_at: z.number(),
+            delivery_attester_signature: z.string(),
+          }),
           settle_after_review_timeout_args: z.object({
             job_id: z.string(),
             output_commitment: z.string(),
@@ -500,12 +600,18 @@ export async function jobsRoutes(app: FastifyInstance) {
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const job = await getJobWithService(req.params.id);
     if (!job) return notFound(reply);
-    if (!isStatus(job.status, [JobStatus.RUNNING, JobStatus.SUBMITTED])) {
+    if (job.status !== JobStatus.RUNNING) {
       return conflict(reply, `job_not_running_status_${job.status}`);
     }
 
     try {
-      const deliveredAt = parsed.data.delivered_at ?? Math.floor(Date.now() / 1000);
+      if (job.service.output_schema && parsed.data.output === undefined) {
+        return reply.status(400).send({ error: "output_required_for_schema_validation" });
+      }
+      const schemaError = validateJsonSchemaShape(parsed.data.output, job.service.output_schema);
+      if (schemaError) return reply.status(400).send({ error: schemaError });
+
+      const deliveredAt = Math.floor(Date.now() / 1000);
       if (job.started_at && deliveredAt < unixSeconds(job.started_at)) {
         return conflict(reply, "delivered_before_start");
       }
@@ -516,6 +622,7 @@ export async function jobsRoutes(app: FastifyInstance) {
         outputCommitment: parsed.data.output_commitment,
         outputHash: parsed.data.output_hash,
         outputUri: parsed.data.output_uri,
+        outputJson: parsed.data.output,
       });
       const attestation = await signDeliveryAttestation({
         ...ensureOnchainJob(job),
@@ -526,8 +633,13 @@ export async function jobsRoutes(app: FastifyInstance) {
       });
       const deliveredAtDate = dateFromUnixSeconds(attestation.delivered_at);
       const reviewTimeoutSeconds = secondsFromEnv("REVIEW_TIMEOUT_SECONDS", 3600);
-      const updated = await prisma.job.update({
-        where: { request_id: job.request_id },
+      const attestationRecord = buildDeliveryAttestationRecord(attestation);
+      const updatedCount = await prisma.job.updateMany({
+        where: {
+          request_id: job.request_id,
+          status: JobStatus.RUNNING,
+          delivered_at: null,
+        },
         data: {
           status: JobStatus.SUBMITTED,
           output_uri: parsed.data.output_uri,
@@ -535,68 +647,17 @@ export async function jobsRoutes(app: FastifyInstance) {
           submitted_at: deliveredAtDate,
           delivered_at: deliveredAtDate,
           review_deadline: new Date(deliveredAtDate.getTime() + reviewTimeoutSeconds * 1000),
+          delivery_attestation: attestationRecord as Prisma.InputJsonValue,
         },
       });
-      return reply.send({
-        ...serializeJob(updated),
-        settle_after_review_timeout_args: attestation.settle_after_review_timeout_args,
-      });
-    } catch (err) {
-      if (err instanceof CreateJobAuthorizationError) {
-        return reply.status(err.statusCode as 400 | 404 | 409 | 500).send({ error: err.message });
-      }
-      throw err;
-    }
-  });
-
-  app.post<{ Params: { id: string } }>("/jobs/:id/no-delivery-attestation", {
-    schema: {
-      tags: ["Jobs"],
-      summary: "Sign NoDeliveryAttestation after the work deadline",
-      params: idParamsSchema,
-      body: noDeliveryAttestationSchema,
-      response: {
-        200: jobResponseSchema.extend({
-          refund_with_no_delivery_attestation_args: z.object({
-            job_id: z.string(),
-            checked_at: z.number(),
-            expires_at: z.number(),
-            no_delivery_attester_signature: z.string(),
-          }),
-        }),
-        400: z.object({ error: z.string(), details: z.unknown().optional() }),
-        404: z.object({ error: z.string() }),
-        409: z.object({ error: z.string() }),
-        500: z.object({ error: z.string() }),
-      },
-    },
-  }, async (req, reply) => {
-    const parsed = noDeliveryAttestationSchema.safeParse(req.body);
-    if (!parsed.success) return sendZodError(reply, parsed.error);
-    const job = await getJobWithService(req.params.id);
-    if (!job) return notFound(reply);
-    if (job.status !== JobStatus.RUNNING) return conflict(reply, `job_not_running_status_${job.status}`);
-    if (!job.work_deadline) return conflict(reply, "work_deadline_missing");
-
-    try {
-      const checkedAt = parsed.data.checked_at ?? Math.floor(Date.now() / 1000);
-      if (checkedAt <= unixSeconds(job.work_deadline)) return conflict(reply, "checked_before_work_deadline");
-      const attestation = await signNoDeliveryAttestation({
-        ...ensureOnchainJob(job),
-        checkedAt,
-        expiresAt: parsed.data.expires_at,
-        expiresInSeconds: parsed.data.expires_in_seconds,
-      });
-      const updated = await prisma.job.update({
+      if (updatedCount.count === 0) return conflict(reply, "job_already_finished");
+      const updated = await prisma.job.findUniqueOrThrow({
         where: { request_id: job.request_id },
-        data: {
-          status: JobStatus.FAILED,
-          error_message: "no_delivery_attested",
-        },
       });
       return reply.send({
         ...serializeJob(updated),
-        refund_with_no_delivery_attestation_args: attestation.refund_with_no_delivery_attestation_args,
+        delivery_attestation: attestation.settle_after_review_timeout_args,
+        settle_after_review_timeout_args: attestation.settle_after_review_timeout_args,
       });
     } catch (err) {
       if (err instanceof CreateJobAuthorizationError) {
@@ -784,46 +845,5 @@ export async function jobsRoutes(app: FastifyInstance) {
       ...serializeJob(updated),
       refund_after_final_timeout_args: { job_id: job.job_id },
     });
-  });
-
-  app.patch<{ Params: { id: string } }>("/jobs/:id/status", {
-    schema: {
-      tags: ["Jobs"],
-      summary: "Transition job status",
-      description: `Valid transitions:\n\`CREATED → FUNDED | EXPIRED\`\n\`FUNDED → RUNNING | REFUNDED | EXPIRED\`\n\`RUNNING → SUBMITTED | FAILED | EXPIRED\`\n\`SUBMITTED → ACCEPTED | DISPUTED | EXPIRED\`\n\`ACCEPTED → SETTLED | DISPUTED\`\n\`FAILED → REFUNDED\`\n\`EXPIRED → REFUNDED\`\n\`DISPUTED → SETTLED | REFUNDED\``,
-      params: idParamsSchema,
-      body: transitionSchema,
-      response: {
-        200: jobResponseSchema,
-        400: z.object({ error: z.string(), details: z.unknown().optional() }),
-        403: z.object({ error: z.string() }),
-        404: z.object({ error: z.string() }),
-      },
-    },
-  }, async (req, reply) => {
-    const parsed = transitionSchema.safeParse(req.body);
-    if (!parsed.success) return sendZodError(reply, parsed.error);
-    const job = await prisma.job.findFirst({
-      where: { OR: [{ request_id: req.params.id }, { job_id: req.params.id }] },
-    });
-    if (!job) return notFound(reply);
-    const allowed = TRANSITIONS[job.status] ?? [];
-    if (!allowed.includes(parsed.data.status)) {
-      return forbidden(
-        reply,
-        `cannot_transition_from_${job.status}_to_${parsed.data.status}`
-      );
-    }
-    const updated = await prisma.job.update({
-      where: { request_id: job.request_id },
-      data: {
-        status: parsed.data.status,
-        output_uri: parsed.data.output_uri,
-        output_hash: parsed.data.output_hash,
-        error_message: parsed.data.error_message,
-        ...timestampForStatus(parsed.data.status),
-      },
-    });
-    return reply.send(serializeJob(updated));
   });
 }
