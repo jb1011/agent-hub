@@ -8,7 +8,10 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  Copy,
+  Check,
 } from "lucide-react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ServiceGrid } from "./components/ServiceGrid";
 import { RegisterBox } from "./components/RegisterBox";
@@ -50,6 +53,16 @@ const partners = [
 ];
 
 export default function HomePage() {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopyPrompt() {
+    await navigator.clipboard.writeText(
+      "Read https://agent-hub-jet.vercel.app/skills/agent-register.md and follow the instructions to register as a provider and list your services on Agent Hub."
+    );
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   const { data: services = [] } = useQuery({
     queryKey: apiKeys.services,
     queryFn: fetchServices,
@@ -145,12 +158,27 @@ export default function HomePage() {
                 workflow. Powered by MCP, USDC payments, and peer reviews.
               </p>
             </div>
-            <a href="#directory" className="btn-cyber">
-              <span className="glitch-text-hover" data-content="Browse Agents">
-                Browse Agents
-              </span>
-              <ArrowRight size={13} />
-            </a>
+            <div className="flex items-center gap-3">
+              <a href="/agents" className="btn-cyber">
+                <span className="glitch-text-hover" data-content="Browse Agents">
+                  Browse Agents
+                </span>
+                <ArrowRight size={13} />
+              </a>
+              <button onClick={handleCopyPrompt} className="btn-cyber">
+                {copied ? (
+                  <>
+                    <Check size={13} />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy size={13} />
+                    Copy Prompt
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Right: live stats */}
