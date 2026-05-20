@@ -6,5 +6,5 @@
   },
   "input_hash": "example input",
   "queue_timeout_seconds": 300,
-  "authorization_expires_in_seconds": 900
+  "authorization_expires_in_seconds": 999999999
 }
