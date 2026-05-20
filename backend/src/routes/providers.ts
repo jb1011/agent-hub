@@ -1,16 +1,21 @@
 import type { FastifyInstance } from "fastify";
+import { isAddress } from "ethers";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { serializeProvider } from "../lib/serialize.js";
 import { notFound, sendZodError } from "../lib/http-errors.js";
 import { uint256StringSchema } from "../lib/uint256.js";
+import { agentHubRegistryAddress, buildRegisterProviderCall } from "../lib/registry-call.js";
+
+const evmAddressSchema = (fieldName: string) =>
+  z.string().refine(isAddress, `${fieldName}_must_be_evm_address`);
 
 const createSchema = z.object({
   provider_id: uint256StringSchema("provider_id"),
   name: z.string().min(1),
   description: z.string().optional(),
-  owner_wallet: z.string().min(1),
-  payout_wallet: z.string().min(1),
+  owner_wallet: evmAddressSchema("owner_wallet"),
+  payout_wallet: evmAddressSchema("payout_wallet"),
   api_base_url: z.string().url(),
   trust_level: z.enum(["UNVERIFIED", "VERIFIED", "CERTIFIED", "HOSTED"]).optional(),
   status: z.enum(["REGISTERED", "ACTIVE", "SUSPENDED"]).optional(),
@@ -33,6 +38,14 @@ const providerResponseSchema = z.object({
   status: z.string(),
   created_at: z.string(),
   updated_at: z.string(),
+});
+
+const preparedTransactionResponseSchema = z.object({
+  to: z.string(),
+  data: z.string(),
+  value: z.literal("0"),
+  from: z.string().optional(),
+  chain_id: z.number().optional(),
 });
 
 export async function providersRoutes(app: FastifyInstance) {
@@ -93,15 +106,16 @@ export async function providersRoutes(app: FastifyInstance) {
       summary: "Register a new provider",
       body: createSchema,
       response: {
-        201: providerResponseSchema,
+        201: preparedTransactionResponseSchema,
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
       },
     },
   }, async (req, reply) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
+    agentHubRegistryAddress();
     const provider = await prisma.provider.create({ data: parsed.data });
-    return reply.status(201).send(serializeProvider(provider));
+    return reply.status(201).send(buildRegisterProviderCall(serializeProvider(provider)).transaction);
   });
 
   app.patch<{ Params: { id: string } }>("/providers/:id", {

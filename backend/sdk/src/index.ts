@@ -2,6 +2,7 @@ export { SkillHubClient } from "./client.js";
 export type {
   SkillHubClientOptions,
   HealthResponse,
+  PreparedContractTransaction,
   // Providers
   Provider,
   ProviderWithServices,
@@ -22,7 +23,6 @@ export type {
   JobStatus,
   CreateJobInput,
   CreateJobResult,
-  CreateJobArgs,
   ListJobsQuery,
   AuthorizationExpiryInput,
   TypedDataResponse,

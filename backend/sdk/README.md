@@ -41,7 +41,19 @@ The SDK mirrors the REST API resources:
 | `client.services` | `list`, `get`, `create`, `update`, `delete` |
 | `client.jobs` | `list`, `get`, `create`, `requestStartAuthorization`, `startJob`, `finishJob`, `requestAcceptance`, `acceptance`, `refundAfterQueueTimeout`, `refundAfterFinalTimeout` |
 
-`client.jobs.create(input)` returns only `create_job_args`; fetch the job with `client.jobs.get(request_id)` after the on-chain creation/funding flow if you need persisted job state.
+`client.providers.create(input)`, `client.services.create(input)`, `client.jobs.create(input)`, `client.jobs.refundAfterQueueTimeout(id)`, and `client.jobs.refundAfterFinalTimeout(id)` return only a prepared contract transaction:
+
+```ts
+type PreparedContractTransaction = {
+  to: string;
+  data: string;
+  value: "0";
+  from?: string;
+  chain_id?: number;
+};
+```
+
+Pass that object to the caller wallet for signing/sending. Fetch the resource afterward with `get(...)` if you need persisted API state.
 
 `client.jobs.startJob(id, input)` maps to `POST /jobs/:id/start-job` and relays `AgentHubEscrow.startJob`. It returns relay metadata (`transaction_hash`, `relayer_address`, `block_number`, `gas_used`) plus the original `input_uri`.
 

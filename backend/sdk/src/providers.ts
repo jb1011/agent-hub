@@ -2,6 +2,7 @@ import type {
   Provider,
   ProviderWithServices,
   CreateProviderInput,
+  PreparedContractTransaction,
   UpdateProviderInput,
 } from "./types.js";
 
@@ -28,8 +29,8 @@ export class ProvidersResource {
    * Register a new provider.
    * POST /providers
    */
-  create(input: CreateProviderInput): Promise<Provider> {
-    return this.request<Provider>("/providers", {
+  create(input: CreateProviderInput): Promise<PreparedContractTransaction> {
+    return this.request<PreparedContractTransaction>("/providers", {
       method: "POST",
       body: JSON.stringify(input),
     });

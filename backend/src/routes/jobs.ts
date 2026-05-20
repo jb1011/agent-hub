@@ -19,6 +19,11 @@ import {
   relaySettleWithUserSignature,
   relayStartJob,
 } from "../lib/escrow-relayer.js";
+import {
+  buildCreateJobTransaction,
+  buildRefundAfterFinalTimeoutTransaction,
+  buildRefundAfterQueueTimeoutTransaction,
+} from "../lib/escrow-transaction.js";
 import { uint256StringSchema } from "../lib/uint256.js";
 
 const JOB_STATUS = [
@@ -104,6 +109,14 @@ const jobResponseSchema = z.object({
   accepted_at: z.string().nullable(),
   settled_at: z.string().nullable(),
   created_at: z.string(),
+});
+
+const preparedTransactionResponseSchema = z.object({
+  to: z.string(),
+  data: z.string(),
+  value: z.literal("0"),
+  from: z.string().optional(),
+  chain_id: z.number().optional(),
 });
 
 const listQuerySchema = z.object({
@@ -646,16 +659,7 @@ export async function jobsRoutes(app: FastifyInstance) {
       summary: "Create a job and generate on-chain creation arguments",
       body: createSchema,
       response: {
-        201: z.object({
-          create_job_args: z.object({
-            service_id: z.string(),
-            request_id: z.string(),
-            input_commitment: z.string(),
-            queue_timeout_seconds: z.number(),
-            expires_at: z.number(),
-            delivery_attester_signature: z.string(),
-          }),
-        }),
+        201: preparedTransactionResponseSchema,
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
@@ -709,16 +713,15 @@ export async function jobsRoutes(app: FastifyInstance) {
         },
       });
 
-      return reply.status(201).send({
-        create_job_args: {
-          service_id: authorization.service_id,
-          request_id: authorization.request_id,
-          input_commitment: authorization.input_commitment,
-          queue_timeout_seconds: authorization.queue_timeout_seconds,
-          expires_at: authorization.expires_at,
-          delivery_attester_signature: authorization.delivery_attester_signature,
-        },
-      });
+      return reply.status(201).send(buildCreateJobTransaction({
+        serviceId: authorization.service_id,
+        requestId: authorization.request_id,
+        inputCommitment: authorization.input_commitment,
+        queueTimeoutSeconds: authorization.queue_timeout_seconds,
+        expiresAt: authorization.expires_at,
+        deliveryAttesterSignature: authorization.delivery_attester_signature,
+        userWallet: authorization.user_wallet,
+      }));
     } catch (err) {
       if (err instanceof CreateJobAuthorizationError) {
         return reply.status(err.statusCode as 400 | 500).send({ error: err.message });
@@ -1091,12 +1094,10 @@ export async function jobsRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>("/jobs/:id/refund-after-queue-timeout", {
     schema: {
       tags: ["Jobs"],
-      summary: "Return refundAfterQueueTimeout calldata arguments after queue deadline",
+      summary: "Return refundAfterQueueTimeout transaction after queue deadline",
       params: idParamsSchema,
       response: {
-        200: jobResponseSchema.extend({
-          refund_after_queue_timeout_args: z.object({ job_id: z.string() }),
-        }),
+        200: preparedTransactionResponseSchema,
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
       },
@@ -1109,25 +1110,20 @@ export async function jobsRoutes(app: FastifyInstance) {
     if (!job.queue_deadline) return conflict(reply, "queue_deadline_missing");
     if (job.queue_deadline.getTime() >= Date.now()) return conflict(reply, "queue_deadline_not_expired");
 
-    const updated = await prisma.job.update({
+    await prisma.job.update({
       where: { request_id: job.request_id },
       data: { status: JobStatus.EXPIRED, error_message: "queue_deadline_expired" },
     });
-    return reply.send({
-      ...serializeJob(updated),
-      refund_after_queue_timeout_args: { job_id: job.job_id },
-    });
+    return reply.send(buildRefundAfterQueueTimeoutTransaction(job.job_id));
   });
 
   app.post<{ Params: { id: string } }>("/jobs/:id/refund-after-final-timeout", {
     schema: {
       tags: ["Jobs"],
-      summary: "Return refundAfterFinalTimeout calldata arguments after final refund deadline",
+      summary: "Return refundAfterFinalTimeout transaction after final refund deadline",
       params: idParamsSchema,
       response: {
-        200: jobResponseSchema.extend({
-          refund_after_final_timeout_args: z.object({ job_id: z.string() }),
-        }),
+        200: preparedTransactionResponseSchema,
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
       },
@@ -1142,13 +1138,10 @@ export async function jobsRoutes(app: FastifyInstance) {
     if (!job.final_refund_deadline) return conflict(reply, "final_refund_deadline_missing");
     if (job.final_refund_deadline.getTime() >= Date.now()) return conflict(reply, "final_refund_deadline_not_expired");
 
-    const updated = await prisma.job.update({
+    await prisma.job.update({
       where: { request_id: job.request_id },
       data: { status: JobStatus.EXPIRED, error_message: "final_refund_deadline_expired" },
     });
-    return reply.send({
-      ...serializeJob(updated),
-      refund_after_final_timeout_args: { job_id: job.job_id },
-    });
+    return reply.send(buildRefundAfterFinalTimeoutTransaction(job.job_id));
   });
 }

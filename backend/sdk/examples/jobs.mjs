@@ -13,6 +13,8 @@
  *   finish     <request_id|job_id> <output_json> [output_uri]
  *   accept-req <request_id|job_id> <output_commitment> [expires_in_seconds]
  *   accept     <request_id|job_id> <output_commitment> <expires_at> <user_signature>
+ *   refund-queue <request_id|job_id>
+ *   refund-final <request_id|job_id>
  *
  * Examples:
  *   node examples/jobs.mjs list
@@ -43,6 +45,8 @@ Usage: node examples/jobs.mjs <command> [args]
   finish     <request_id|job_id> <output_json> [output_uri]
   accept-req <request_id|job_id> <output_commitment> [expires_in_seconds]
   accept     <request_id|job_id> <output_commitment> <expires_at> <user_signature>
+  refund-queue <request_id|job_id>
+  refund-final <request_id|job_id>
 `);
   process.exit(1);
 }
@@ -72,7 +76,7 @@ async function run() {
       const [user_wallet, service_id] = args;
       if (!user_wallet || !service_id) usage();
       const result = await client.jobs.create({ user_wallet, service_id });
-      console.log("\nJob created:");
+      console.log("\nCreate job transaction:");
       console.log(JSON.stringify(result, null, 2));
       break;
     }
@@ -133,6 +137,24 @@ async function run() {
         user_signature,
       });
       console.log("\nJob accepted and settled:");
+      console.log(JSON.stringify(result, null, 2));
+      break;
+    }
+
+    case "refund-queue": {
+      const [id] = args;
+      if (!id) usage();
+      const result = await client.jobs.refundAfterQueueTimeout(id);
+      console.log("\nRefund after queue timeout transaction:");
+      console.log(JSON.stringify(result, null, 2));
+      break;
+    }
+
+    case "refund-final": {
+      const [id] = args;
+      if (!id) usage();
+      const result = await client.jobs.refundAfterFinalTimeout(id);
+      console.log("\nRefund after final timeout transaction:");
       console.log(JSON.stringify(result, null, 2));
       break;
     }

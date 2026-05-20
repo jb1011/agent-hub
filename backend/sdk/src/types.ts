@@ -11,6 +11,14 @@ export interface HealthResponse {
   ok: boolean;
 }
 
+export interface PreparedContractTransaction {
+  to: string;
+  data: string;
+  value: "0";
+  from?: string;
+  chain_id?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Providers
 // ---------------------------------------------------------------------------
@@ -150,18 +158,7 @@ export interface JobWithDetails extends Job {
   };
 }
 
-export interface CreateJobArgs {
-  service_id: string;
-  request_id: string;
-  input_commitment: string;
-  queue_timeout_seconds: number;
-  expires_at: number;
-  delivery_attester_signature: string;
-}
-
-export interface CreateJobResult {
-  create_job_args: CreateJobArgs;
-}
+export type CreateJobResult = PreparedContractTransaction;
 
 export interface CreateJobInput {
   job_id?: string;
@@ -310,17 +307,9 @@ export type SettleWithUserSignatureInput = AcceptanceInput;
  */
 export type SettleWithUserSignatureResult = AcceptanceResult;
 
-export interface RefundAfterQueueTimeoutResult extends Job {
-  refund_after_queue_timeout_args: {
-    job_id: string;
-  };
-}
+export type RefundAfterQueueTimeoutResult = PreparedContractTransaction;
 
-export interface RefundAfterFinalTimeoutResult extends Job {
-  refund_after_final_timeout_args: {
-    job_id: string;
-  };
-}
+export type RefundAfterFinalTimeoutResult = PreparedContractTransaction;
 
 // ---------------------------------------------------------------------------
 // Escrow data included in job responses

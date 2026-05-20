@@ -69,7 +69,7 @@ async function run() {
         endpoint_path,
         price_usdc: Number(price_usdc),
       });
-      console.log("\nCreated service:");
+      console.log("\nCreate service transaction:");
       console.log(JSON.stringify(created, null, 2));
       break;
     }

@@ -66,7 +66,7 @@ async function run() {
         payout_wallet,
         api_base_url,
       });
-      console.log("\nCreated provider:");
+      console.log("\nCreate provider transaction:");
       console.log(JSON.stringify(created, null, 2));
       break;
     }

@@ -5,6 +5,12 @@ import { prisma } from "../lib/prisma.js";
 import { serializeService } from "../lib/serialize.js";
 import { notFound, sendZodError } from "../lib/http-errors.js";
 import { uint256StringSchema } from "../lib/uint256.js";
+import { agentHubRegistryAddress, buildRegisterServiceCall } from "../lib/registry-call.js";
+
+const usdcAmountSchema = z
+  .number()
+  .positive()
+  .refine((value) => /^\d+(\.\d{1,6})?$/.test(value.toString()), "price_usdc_must_have_up_to_6_decimals");
 
 const createSchema = z.object({
   service_id: uint256StringSchema("service_id"),
@@ -15,7 +21,7 @@ const createSchema = z.object({
   endpoint_path: z.string().min(1),
   input_schema: z.unknown().optional(),
   output_schema: z.unknown().optional(),
-  price_usdc: z.number().positive(),
+  price_usdc: usdcAmountSchema,
   max_concurrent_jobs: z.number().int().positive(),
   timeout_seconds: z.number().int().positive().optional(),
   status: z.enum(["REGISTERED", "ACTIVE", "INACTIVE", "SUSPENDED"]).optional(),
@@ -42,6 +48,14 @@ const serviceResponseSchema = z.object({
   status: z.string(),
   created_at: z.string(),
   updated_at: z.string(),
+});
+
+const preparedTransactionResponseSchema = z.object({
+  to: z.string(),
+  data: z.string(),
+  value: z.literal("0"),
+  from: z.string().optional(),
+  chain_id: z.number().optional(),
 });
 
 const listQuerySchema = z.object({
@@ -113,7 +127,7 @@ export async function servicesRoutes(app: FastifyInstance) {
       summary: "Register a new service",
       body: createSchema,
       response: {
-        201: serviceResponseSchema,
+        201: preparedTransactionResponseSchema,
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
         404: z.object({ error: z.string() }),
       },
@@ -121,6 +135,7 @@ export async function servicesRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
+    agentHubRegistryAddress();
     const providerExists = await prisma.provider.findUnique({
       where: { provider_id: parsed.data.provider_id },
     });
@@ -132,7 +147,8 @@ export async function servicesRoutes(app: FastifyInstance) {
         output_schema: parsed.data.output_schema as Prisma.InputJsonValue ?? undefined,
       },
     });
-    return reply.status(201).send(serializeService(service));
+    const { max_concurrent_jobs: _maxConcurrentJobs, ...metadata } = serializeService(service);
+    return reply.status(201).send(buildRegisterServiceCall(metadata, providerExists.owner_wallet).transaction);
   });
 
   app.patch<{ Params: { id: string } }>("/services/:id", {

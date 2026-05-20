@@ -51,7 +51,7 @@ export class JobsResource {
   }
 
   /**
-   * Create a job and generate the on-chain creation arguments.
+   * Create a job and generate the on-chain creation transaction.
    * POST /jobs
    */
   create(input: CreateJobInput): Promise<CreateJobResult> {
@@ -142,7 +142,7 @@ export class JobsResource {
   }
 
   /**
-   * Return refundAfterQueueTimeout calldata arguments after queue deadline.
+   * Return refundAfterQueueTimeout transaction after queue deadline.
    * POST /jobs/:id/refund-after-queue-timeout
    */
   refundAfterQueueTimeout(id: string): Promise<RefundAfterQueueTimeoutResult> {
@@ -153,7 +153,7 @@ export class JobsResource {
   }
 
   /**
-   * Return refundAfterFinalTimeout calldata arguments after final refund deadline.
+   * Return refundAfterFinalTimeout transaction after final refund deadline.
    * POST /jobs/:id/refund-after-final-timeout
    */
   refundAfterFinalTimeout(id: string): Promise<RefundAfterFinalTimeoutResult> {

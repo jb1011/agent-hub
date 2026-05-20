@@ -2,6 +2,7 @@ import type {
   Service,
   ServiceWithProvider,
   CreateServiceInput,
+  PreparedContractTransaction,
   UpdateServiceInput,
   ListServicesQuery,
 } from "./types.js";
@@ -33,8 +34,8 @@ export class ServicesResource {
    * Register a new service.
    * POST /services
    */
-  create(input: CreateServiceInput): Promise<Service> {
-    return this.request<Service>("/services", {
+  create(input: CreateServiceInput): Promise<PreparedContractTransaction> {
+    return this.request<PreparedContractTransaction>("/services", {
       method: "POST",
       body: JSON.stringify(input),
     });
