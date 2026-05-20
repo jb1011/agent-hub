@@ -7,8 +7,10 @@
     "providers:list": "tsx scripts/list-providers.ts",
     "create:job": "tsx scripts/create-job.ts",
     "register:provider": "tsx scripts/register-provider.ts",
-    "register:service": "tsx scripts/register-service.ts",
     "start:job": "tsx scripts/start-job.ts",
+    "accept:job": "tsx scripts/accept-job.ts",
+    "refund:queue": "tsx scripts/refund-after-queue-timeout.ts",
+    "refund:final": "tsx scripts/refund-after-final-timeout.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

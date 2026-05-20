@@ -20,13 +20,6 @@ enum TrustLevel {
   HOSTED
 }
 
-enum ServiceStatus {
-  REGISTERED
-  ACTIVE
-  INACTIVE
-  SUSPENDED
-}
-
 enum JobStatus {
   CREATED
   FUNDED
@@ -49,51 +42,35 @@ enum EscrowStatus {
 }
 
 model Provider {
-  provider_id    String         @id
-  name           String
-  description    String?
-  status         ProviderStatus @default(REGISTERED)
-  owner_wallet   String
-  payout_wallet  String
-  api_base_url   String
-  trust_level    TrustLevel     @default(UNVERIFIED)
-  created_at     DateTime       @default(now())
-  updated_at     DateTime       @updatedAt
-
-  services Service[]
-
-  @@index([status])
-  @@index([owner_wallet])
-}
-
-model Service {
-  service_id          String        @id
-  provider_id         String
-  provider            Provider      @relation(fields: [provider_id], references: [provider_id], onDelete: Restrict)
+  provider_id         String         @id
   name                String
   description         String?
+  status              ProviderStatus @default(REGISTERED)
+  owner_wallet        String
+  payout_wallet       String
+  api_base_url        String
+  trust_level         TrustLevel     @default(UNVERIFIED)
   service_type        String
-  endpoint_path       String
   input_schema        Json?
   output_schema       Json?
-  price_usdc          Decimal       @db.Decimal(18, 6)
+  price_usdc          Decimal        @db.Decimal(18, 6)
   max_concurrent_jobs Int
-  timeout_seconds     Int           @default(300)
-  status              ServiceStatus @default(REGISTERED)
-  created_at          DateTime      @default(now())
-  updated_at          DateTime      @updatedAt
+  timeout_seconds     Int            @default(300)
+  created_at          DateTime       @default(now())
+  updated_at          DateTime       @updatedAt
 
   jobs Job[]
 
-  @@index([provider_id, status])
+  @@index([status])
+  @@index([owner_wallet])
 }
 
 model Job {
   request_id            String    @id @default(cuid())
   job_id                String?   @unique
   user_wallet           String
-  service_id            String
-  service               Service   @relation(fields: [service_id], references: [service_id], onDelete: Restrict)
+  provider_id           String
+  provider              Provider  @relation(fields: [provider_id], references: [provider_id], onDelete: Restrict)
   status                JobStatus @default(CREATED)
   input                 Json?
   input_hash            String?
@@ -118,7 +95,7 @@ model Job {
   escrow Escrow?
 
   @@index([user_wallet, status])
-  @@index([service_id])
+  @@index([provider_id])
 }
 
 model Escrow {

@@ -1,6 +1,5 @@
 import type {
   Provider,
-  ProviderWithServices,
   CreateProviderInput,
   PreparedContractTransaction,
   UpdateProviderInput,
@@ -18,11 +17,11 @@ export class ProvidersResource {
   }
 
   /**
-   * Get a single provider by ID (includes its services).
+   * Get a single provider by ID.
    * GET /providers/:id
    */
-  get(providerId: string): Promise<ProviderWithServices> {
-    return this.request<ProviderWithServices>(`/providers/${encodeURIComponent(providerId)}`);
+  get(providerId: string): Promise<Provider> {
+    return this.request<Provider>(`/providers/${encodeURIComponent(providerId)}`);
   }
 
   /**

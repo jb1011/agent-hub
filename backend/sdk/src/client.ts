@@ -1,6 +1,5 @@
 import type { HealthResponse, SkillHubClientOptions } from "./types.js";
 import { ProvidersResource } from "./providers.js";
-import { ServicesResource } from "./services.js";
 import { JobsResource } from "./jobs.js";
 
 export class SkillHubClient {
@@ -9,16 +8,12 @@ export class SkillHubClient {
   /** Provider CRUD operations */
   readonly providers: ProvidersResource;
 
-  /** Service CRUD operations */
-  readonly services: ServicesResource;
-
   /** Job lifecycle operations */
   readonly jobs: JobsResource;
 
   constructor(options: SkillHubClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? "http://localhost:3000").replace(/\/$/, "");
     this.providers = new ProvidersResource(this.request.bind(this));
-    this.services = new ServicesResource(this.request.bind(this));
     this.jobs = new JobsResource(this.request.bind(this));
   }
 

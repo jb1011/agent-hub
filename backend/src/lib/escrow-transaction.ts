@@ -3,13 +3,13 @@ import { CreateJobAuthorizationError } from "./create-job-authorization.js";
 import type { PreparedContractTransaction } from "./registry-call.js";
 
 const AGENT_HUB_ESCROW_INTERFACE = new Interface([
-  "function createJob(uint256 serviceId, bytes32 requestId, bytes32 inputCommitment, uint64 queueTimeoutSeconds, uint256 expiresAt, bytes deliveryAttesterSignature)",
+  "function createJob(uint256 providerId, bytes32 requestId, bytes32 inputCommitment, uint64 queueTimeoutSeconds, uint256 expiresAt, bytes deliveryAttesterSignature)",
   "function refundAfterQueueTimeout(uint256 jobId)",
   "function refundAfterFinalTimeout(uint256 jobId)",
 ]);
 
 type CreateJobTransactionParams = {
-  serviceId: string;
+  providerId: string;
   requestId: string;
   inputCommitment: string;
   queueTimeoutSeconds: number;
@@ -65,7 +65,7 @@ export function buildCreateJobTransaction(params: CreateJobTransactionParams): P
   return preparedEscrowTransaction(
     "createJob",
     [
-      params.serviceId,
+      params.providerId,
       params.requestId,
       params.inputCommitment,
       params.queueTimeoutSeconds,

@@ -32,7 +32,6 @@ type EthersError = {
 
 type Job = {
   providerId: BigNumber;
-  serviceId: BigNumber;
   queueDeadline: BigNumber;
   workTimeout: BigNumber;
   status: number;
@@ -253,7 +252,6 @@ async function main(): Promise<void> {
   console.log(`Caller wallet: ${callerAddress}`);
   console.log(`Job: ${jobId.toString()}`);
   console.log(`Provider: ${job.providerId.toString()}`);
-  console.log(`Service: ${job.serviceId.toString()}`);
   console.log(`Status: ${statusName}`);
   console.log(`Queue deadline: ${formatUintSeconds(job.queueDeadline)} (${job.queueDeadline.toString()})`);
   console.log(`Authorization expires at: ${formatUnixSeconds(expiresAt)} (${expiresAt.toString()})`);

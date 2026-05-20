@@ -11,8 +11,7 @@ type Deployment = {
 };
 
 const AGENT_HUB_REGISTRY_INTERFACE = new Interface([
-  "function registerProvider(address signer, address payoutWallet, bytes32 metadataCommitment)",
-  "function registerService(uint256 providerId, uint256 price, uint64 workTimeout, bytes32 metadataCommitment)",
+  "function registerProvider(address signer, address payoutWallet, uint256 price, uint64 workTimeout, bytes32 metadataCommitment)",
 ]);
 
 export type ProviderRegistryMetadata = {
@@ -24,22 +23,12 @@ export type ProviderRegistryMetadata = {
   payout_wallet: string;
   api_base_url: string;
   trust_level: string;
-  created_at: string | null;
-  updated_at: string | null;
-};
-
-export type ServiceRegistryMetadata = {
-  service_id: string;
-  provider_id: string;
-  name: string;
-  description: string | null;
   service_type: string;
-  endpoint_path: string;
   input_schema: unknown;
   output_schema: unknown;
   price_usdc: string | null;
+  max_concurrent_jobs: number;
   timeout_seconds: number | null;
-  status: string;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -80,10 +69,19 @@ export function agentHubRegistryChainId(): number | undefined {
 }
 
 export function buildRegisterProviderCall(metadata: ProviderRegistryMetadata) {
+  if (metadata.price_usdc == null) {
+    throw new Error("provider.price_usdc is required to build registerProvider args");
+  }
+  if (metadata.timeout_seconds == null) {
+    throw new Error("provider.timeout_seconds is required to build registerProvider args");
+  }
+
   const registryAddress = agentHubRegistryAddress();
   const args = {
     signer: getAddress(metadata.owner_wallet),
     payout_wallet: getAddress(metadata.payout_wallet),
+    price: parseUsdc(metadata.price_usdc, "provider.price_usdc"),
+    work_timeout: asUint64(metadata.timeout_seconds, "provider.timeout_seconds"),
     metadata_commitment: metadataCommitment(metadata as unknown as JsonValue),
   };
 
@@ -94,37 +92,8 @@ export function buildRegisterProviderCall(metadata: ProviderRegistryMetadata) {
     transaction: buildPreparedTransaction(
       registryAddress,
       "registerProvider",
-      [args.signer, args.payout_wallet, args.metadata_commitment],
+      [args.signer, args.payout_wallet, args.price, args.work_timeout, args.metadata_commitment],
       args.signer
-    ),
-  };
-}
-
-export function buildRegisterServiceCall(metadata: ServiceRegistryMetadata, providerOwnerWallet?: string) {
-  if (metadata.price_usdc == null) {
-    throw new Error("service.price_usdc is required to build registerService args");
-  }
-  if (metadata.timeout_seconds == null) {
-    throw new Error("service.timeout_seconds is required to build registerService args");
-  }
-
-  const registryAddress = agentHubRegistryAddress();
-  const args = {
-    provider_id: metadata.provider_id,
-    price: parseUsdc(metadata.price_usdc),
-    work_timeout: asUint64(metadata.timeout_seconds, "service.timeout_seconds"),
-    metadata_commitment: metadataCommitment(metadata as unknown as JsonValue),
-  };
-
-  return {
-    agent_hub_registry_address: registryAddress,
-    function_name: "registerService" as const,
-    register_service_args: args,
-    transaction: buildPreparedTransaction(
-      registryAddress,
-      "registerService",
-      [args.provider_id, args.price, args.work_timeout, args.metadata_commitment],
-      providerOwnerWallet
     ),
   };
 }
@@ -169,7 +138,7 @@ function metadataCommitment(metadata: JsonValue): string {
 
 function buildPreparedTransaction(
   registryAddress: string,
-  functionName: "registerProvider" | "registerService",
+  functionName: "registerProvider",
   args: readonly unknown[],
   from?: string
 ): PreparedContractTransaction {
@@ -184,13 +153,13 @@ function buildPreparedTransaction(
   };
 }
 
-function parseUsdc(value: string): string {
+function parseUsdc(value: string, fieldName: string): string {
   if (!/^\d+(\.\d{1,6})?$/.test(value)) {
-    throw new Error("service.price_usdc must be a positive decimal with up to 6 decimals");
+    throw new Error(`${fieldName} must be a positive decimal with up to 6 decimals`);
   }
 
   const amount = parseUnits(value, 6);
-  if (amount === 0n) throw new Error("service.price_usdc must be greater than 0");
+  if (amount === 0n) throw new Error(`${fieldName} must be greater than 0`);
   return amount.toString();
 }
 

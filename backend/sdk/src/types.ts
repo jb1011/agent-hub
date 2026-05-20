@@ -34,18 +34,15 @@ export interface Provider {
   payout_wallet: string;
   api_base_url: string;
   trust_level: ProviderTrustLevel;
+  service_type: string;
+  input_schema: unknown;
+  output_schema: unknown;
+  price_usdc: string;
+  max_concurrent_jobs: number;
+  timeout_seconds: number | null;
   status: ProviderStatus;
   created_at: string;
   updated_at: string;
-}
-
-export interface ProviderWithServices extends Provider {
-  services: Array<{
-    service_id: string;
-    name: string;
-    max_concurrent_jobs: number;
-    status: string;
-  }>;
 }
 
 export interface CreateProviderInput {
@@ -56,63 +53,16 @@ export interface CreateProviderInput {
   payout_wallet: string;
   api_base_url: string;
   trust_level?: ProviderTrustLevel;
-  status?: ProviderStatus;
-}
-
-export type UpdateProviderInput = Partial<Omit<CreateProviderInput, "provider_id">>;
-
-// ---------------------------------------------------------------------------
-// Services
-// ---------------------------------------------------------------------------
-
-export type ServiceStatus = "REGISTERED" | "ACTIVE" | "INACTIVE" | "SUSPENDED";
-
-export interface Service {
-  service_id: string;
-  provider_id: string;
-  name: string;
-  description: string | null;
   service_type: string;
-  endpoint_path: string;
-  input_schema: unknown;
-  output_schema: unknown;
-  price_usdc: string;
-  max_concurrent_jobs: number;
-  timeout_seconds: number | null;
-  status: ServiceStatus;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ServiceWithProvider extends Service {
-  provider: {
-    provider_id: string;
-    name: string;
-    trust_level: string;
-  };
-}
-
-export interface CreateServiceInput {
-  service_id: string;
-  provider_id: string;
-  name: string;
-  description?: string;
-  service_type: string;
-  endpoint_path: string;
   input_schema?: unknown;
   output_schema?: unknown;
   price_usdc: number;
   max_concurrent_jobs: number;
   timeout_seconds?: number;
-  status?: ServiceStatus;
+  status?: ProviderStatus;
 }
 
-export type UpdateServiceInput = Partial<Omit<CreateServiceInput, "service_id" | "provider_id">>;
-
-export interface ListServicesQuery {
-  provider_id?: string;
-  status?: string;
-}
+export type UpdateProviderInput = Partial<Omit<CreateProviderInput, "provider_id">>;
 
 // ---------------------------------------------------------------------------
 // Jobs
@@ -126,7 +76,7 @@ export interface Job {
   request_id: string;
   job_id: string | null;
   user_wallet: string;
-  service_id: string;
+  provider_id: string;
   status: JobStatus;
   input: unknown | null;
   input_hash: string | null;
@@ -151,8 +101,8 @@ export interface Job {
 
 export interface JobWithDetails extends Job {
   escrow: Escrow | null;
-  service: {
-    service_id: string;
+  provider: {
+    provider_id: string;
     name: string;
     price_usdc: string;
   };
@@ -164,7 +114,7 @@ export interface CreateJobInput {
   job_id?: string;
   request_id?: string;
   user_wallet: string;
-  service_id: string;
+  provider_id: string;
   input?: unknown;
   input_hash?: string;
   input_commitment?: string;
@@ -179,7 +129,7 @@ export interface ListJobsQuery {
   request_id?: string;
   job_id?: string;
   user_wallet?: string;
-  service_id?: string;
+  provider_id?: string;
   status?: JobStatus;
 }
 

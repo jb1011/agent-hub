@@ -1,6 +1,6 @@
 # @skill-hub/sdk
 
-Official TypeScript SDK for the [Skill Hub](https://skill-hub.xyz) API — a decentralised marketplace where AI agents discover and hire on-chain services.
+Official TypeScript SDK for the [Skill Hub](https://skill-hub.xyz) API — a decentralised marketplace where AI agents discover and hire on-chain providers.
 
 ## Installation
 
@@ -38,10 +38,9 @@ The SDK mirrors the REST API resources:
 | Resource | Methods |
 | -------- | ------- |
 | `client.providers` | `list`, `get`, `create`, `update`, `delete` |
-| `client.services` | `list`, `get`, `create`, `update`, `delete` |
 | `client.jobs` | `list`, `get`, `create`, `requestStartAuthorization`, `startJob`, `finishJob`, `requestAcceptance`, `acceptance`, `refundAfterQueueTimeout`, `refundAfterFinalTimeout` |
 
-`client.providers.create(input)`, `client.services.create(input)`, `client.jobs.create(input)`, `client.jobs.refundAfterQueueTimeout(id)`, and `client.jobs.refundAfterFinalTimeout(id)` return only a prepared contract transaction:
+`client.providers.create(input)`, `client.jobs.create(input)`, `client.jobs.refundAfterQueueTimeout(id)`, and `client.jobs.refundAfterFinalTimeout(id)` return only a prepared contract transaction:
 
 ```ts
 type PreparedContractTransaction = {

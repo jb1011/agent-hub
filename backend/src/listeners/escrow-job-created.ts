@@ -3,7 +3,7 @@ import { Contract, WebSocketProvider, type ContractEventPayload } from "ethers";
 import { prisma } from "../lib/prisma.js";
 
 const ESCROW_ABI = [
-  "event JobCreated(uint256 indexed jobId, address indexed user, uint256 indexed serviceId, uint256 providerId, uint64 queueDeadline, uint256 price, uint256 protocolFee, address providerPayoutWallet, address treasury, bytes32 requestId, bytes32 inputCommitment)",
+  "event JobCreated(uint256 indexed jobId, address indexed user, uint256 indexed providerId, uint64 queueDeadline, uint256 price, uint256 protocolFee, address providerPayoutWallet, address treasury, bytes32 requestId, bytes32 inputCommitment)",
   "event JobStarted(uint256 indexed jobId, uint256 indexed providerId, uint64 startedAt, uint64 workDeadline, uint64 finalRefundDeadline)",
   "event JobSettledWithUserSignature(uint256 indexed jobId, bytes32 outputCommitment, address providerPayoutWallet, uint256 providerAmount, uint256 protocolFee)",
   "event JobSettledAfterReviewTimeout(uint256 indexed jobId, bytes32 outputCommitment, uint64 deliveredAt, address providerPayoutWallet, uint256 providerAmount, uint256 protocolFee)",
@@ -248,7 +248,6 @@ export function startEscrowJobCreatedListener(logger: FastifyBaseLogger): Listen
   const onJobCreated = async (
     jobId: bigint,
     user: string,
-    serviceId: bigint,
     providerId: bigint,
     queueDeadline: bigint,
     price: bigint,
@@ -266,7 +265,6 @@ export function startEscrowJobCreatedListener(logger: FastifyBaseLogger): Listen
       {
         jobId: onchainJobId,
         user,
-        serviceId: serviceId.toString(),
         providerId: providerId.toString(),
         queueDeadline: queueDeadline.toString(),
         price: price.toString(),

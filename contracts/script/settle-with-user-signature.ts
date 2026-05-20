@@ -33,7 +33,6 @@ type EthersError = {
 
 type Job = {
   providerId: BigNumber;
-  serviceId: BigNumber;
   workDeadline: BigNumber;
   finalRefundDeadline: BigNumber;
   status: number;
@@ -261,7 +260,6 @@ async function main(): Promise<void> {
   console.log(`Provider wallet: ${callerAddress}`);
   console.log(`Job: ${jobId.toString()}`);
   console.log(`Provider: ${job.providerId.toString()}`);
-  console.log(`Service: ${job.serviceId.toString()}`);
   console.log(`Status: ${statusName}`);
   console.log(`Output commitment: ${outputCommitment}`);
   console.log(`Work deadline: ${formatUnixSeconds(job.workDeadline)} (${job.workDeadline.toString()})`);

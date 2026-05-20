@@ -2,13 +2,12 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "name": "Skill Hub API",
-    "description": "Fastify backend collection for providers, services, and jobs. Import it and set the `baseUrl` variable if needed.",
+    "description": "Fastify backend collection for providers and jobs. Import it and set the `baseUrl` variable if needed.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:3000" },
     { "key": "providerId", "value": "1" },
-    { "key": "serviceId", "value": "1" },
     { "key": "jobId", "value": "" },
     { "key": "inputCommitment", "value": "0x1111111111111111111111111111111111111111111111111111111111111111" },
     { "key": "outputCommitment", "value": "0x2222222222222222222222222222222222222222222222222222222222222222" },
@@ -58,7 +57,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"provider_id\": \"{{providerId}}\",\n  \"name\": \"Demo Provider\",\n  \"description\": \"Optional description\",\n  \"owner_wallet\": \"0x0000000000000000000000000000000000000001\",\n  \"payout_wallet\": \"0x0000000000000000000000000000000000000002\",\n  \"api_base_url\": \"https://api.example.com\",\n  \"trust_level\": \"VERIFIED\",\n  \"status\": \"ACTIVE\"\n}"
+              "raw": "{\n  \"provider_id\": \"{{providerId}}\",\n  \"name\": \"Demo Provider\",\n  \"description\": \"Optional description\",\n  \"owner_wallet\": \"0x0000000000000000000000000000000000000001\",\n  \"payout_wallet\": \"0x0000000000000000000000000000000000000002\",\n  \"api_base_url\": \"https://api.example.com\",\n  \"trust_level\": \"VERIFIED\",\n  \"service_type\": \"AI\",\n  \"input_schema\": { \"type\": \"object\" },\n  \"output_schema\": { \"type\": \"object\" },\n  \"price_usdc\": 1.5,\n  \"max_concurrent_jobs\": 2,\n  \"timeout_seconds\": 300,\n  \"status\": \"ACTIVE\"\n}"
             },
             "url": "{{baseUrl}}/providers"
           }
@@ -86,61 +85,6 @@
       ]
     },
     {
-      "name": "Services",
-      "item": [
-        {
-          "name": "List services",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/services",
-            "description": "Optional query parameters: ?provider_id=&status= (for example ACTIVE)."
-          }
-        },
-        {
-          "name": "Get service",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/services/{{serviceId}}"
-          }
-        },
-        {
-          "name": "Create service",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"service_id\": \"{{serviceId}}\",\n  \"provider_id\": \"{{providerId}}\",\n  \"name\": \"Text API\",\n  \"description\": \"Optional\",\n  \"service_type\": \"AI\",\n  \"endpoint_path\": \"/v1/process\",\n  \"input_schema\": { \"type\": \"object\" },\n  \"output_schema\": { \"type\": \"object\" },\n  \"price_usdc\": 1.5,\n  \"max_concurrent_jobs\": 2,\n  \"timeout_seconds\": 300,\n  \"status\": \"ACTIVE\"\n}"
-            },
-            "url": "{{baseUrl}}/services",
-            "description": "Set `providerId` to an existing provider id."
-          }
-        },
-        {
-          "name": "Update service",
-          "request": {
-            "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Renamed service\",\n  \"price_usdc\": 2.0\n}"
-            },
-            "url": "{{baseUrl}}/services/{{serviceId}}"
-          }
-        },
-        {
-          "name": "Delete service",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": "{{baseUrl}}/services/{{serviceId}}"
-          }
-        }
-      ]
-    },
-    {
       "name": "Jobs",
       "item": [
         {
@@ -149,7 +93,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/jobs",
-            "description": "Optional query parameters: ?user_wallet=&service_id=&status=."
+            "description": "Optional query parameters: ?user_wallet=&provider_id=&status=."
           }
         },
         {
@@ -167,7 +111,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"user_wallet\": \"0x00000000000000000000000000000000000000aa\",\n  \"service_id\": \"{{serviceId}}\",\n  \"input\": { \"uri\": \"ipfs://input\" },\n  \"input_commitment\": \"{{inputCommitment}}\",\n  \"queue_timeout_seconds\": 3600,\n  \"authorization_expires_in_seconds\": 3600\n}"
+              "raw": "{\n  \"user_wallet\": \"0x00000000000000000000000000000000000000aa\",\n  \"provider_id\": \"{{providerId}}\",\n  \"input\": { \"uri\": \"ipfs://input\" },\n  \"input_commitment\": \"{{inputCommitment}}\",\n  \"queue_timeout_seconds\": 3600,\n  \"authorization_expires_in_seconds\": 3600\n}"
             },
             "url": "{{baseUrl}}/jobs"
           }
@@ -221,7 +165,7 @@
               "raw": "{\n  \"output_commitment\": \"{{outputCommitment}}\",\n  \"expires_at\": {{signatureExpiresAt}}\n}"
             },
             "url": "{{baseUrl}}/jobs/{{jobId}}/acceptance-request",
-            "description": "Returns the EIP-712 typed data that the user must sign to accept the output. Use the same `signatureExpiresAt` value in the settlement request."
+            "description": "Step 1 for user acceptance. Returns the EIP-712 `JobAcceptance` typed data that the user wallet must sign. Copy the resulting signature into `userSignature`, then call `POST {{baseUrl}}/jobs/{{jobId}}/acceptance` with the same output commitment and `expires_at`."
           }
         },
         {
@@ -231,10 +175,10 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"expires_at\": {{signatureExpiresAt}},\n  \"user_signature\": \"{{userSignature}}\"\n}"
+              "raw": "{\n  \"output_commitment\": \"{{outputCommitment}}\",\n  \"expires_at\": {{signatureExpiresAt}},\n  \"user_signature\": \"{{userSignature}}\"\n}"
             },
             "url": "{{baseUrl}}/jobs/{{jobId}}/acceptance",
-            "description": "Submits the user's acceptance signature and relays `settleWithUserSignature`. The backend uses the stored output commitment from `job-finish`; `output_commitment` can be added if an explicit override is needed."
+            "description": "Step 2 for user acceptance. Submit the EIP-712 signature produced from `POST {{baseUrl}}/jobs/{{jobId}}/acceptance-request`; the backend relays `settleWithUserSignature` and settles the job."
           }
         },
         {

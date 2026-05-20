@@ -1,4 +1,4 @@
-import type { Provider, Service, Job, Escrow } from "@prisma/client";
+import type { Provider, Job, Escrow } from "@prisma/client";
 import type { Decimal } from "@prisma/client/runtime/library";
 
 function dec(d: Decimal | null | undefined): string | null {
@@ -19,27 +19,14 @@ export function serializeProvider(p: Provider) {
     payout_wallet: p.payout_wallet,
     api_base_url: p.api_base_url,
     trust_level: p.trust_level,
+    service_type: p.service_type,
+    input_schema: p.input_schema,
+    output_schema: p.output_schema,
+    price_usdc: dec(p.price_usdc),
+    max_concurrent_jobs: p.max_concurrent_jobs,
+    timeout_seconds: p.timeout_seconds,
     created_at: dt(p.created_at),
     updated_at: dt(p.updated_at),
-  };
-}
-
-export function serializeService(s: Service) {
-  return {
-    service_id: s.service_id,
-    provider_id: s.provider_id,
-    name: s.name,
-    description: s.description,
-    service_type: s.service_type,
-    endpoint_path: s.endpoint_path,
-    input_schema: s.input_schema,
-    output_schema: s.output_schema,
-    price_usdc: dec(s.price_usdc),
-    max_concurrent_jobs: s.max_concurrent_jobs,
-    timeout_seconds: s.timeout_seconds,
-    status: s.status,
-    created_at: dt(s.created_at),
-    updated_at: dt(s.updated_at),
   };
 }
 
@@ -48,7 +35,7 @@ export function serializeJob(j: Job) {
     request_id: j.request_id,
     job_id: j.job_id,
     user_wallet: j.user_wallet,
-    service_id: j.service_id,
+    provider_id: j.provider_id,
     status: j.status,
     input: j.input,
     input_hash: j.input_hash,

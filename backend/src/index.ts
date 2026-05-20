@@ -10,7 +10,6 @@ import {
   jsonSchemaTransform,
 } from "@fastify/type-provider-zod";
 import { providersRoutes } from "./routes/providers.js";
-import { servicesRoutes } from "./routes/services.js";
 import {
   jobsRoutes,
   startNoDeliveryAttestationWorker,
@@ -32,12 +31,11 @@ await app.register(swagger, {
     info: {
       title: "Skill Hub API",
       description:
-        "REST API for the Skill Hub — a decentralised marketplace where AI agents discover and hire on-chain services.",
+        "REST API for the Skill Hub — a decentralised marketplace where AI agents discover and hire providers.",
       version: "0.1.0",
     },
     tags: [
-      { name: "Providers", description: "AI service provider registration and management" },
-      { name: "Services", description: "On-chain service catalogue" },
+      { name: "Providers", description: "AI provider registration and management" },
       { name: "Jobs", description: "Job lifecycle: creation, status transitions, and authorisations" },
     ],
   },
@@ -54,7 +52,6 @@ await app.register(swaggerUi, {
 app.get("/health", { schema: { tags: ["Health"] } }, async () => ({ ok: true }));
 
 await app.register(providersRoutes);
-await app.register(servicesRoutes);
 await app.register(jobsRoutes);
 
 const escrowJobCreatedListener = startEscrowJobCreatedListener(app.log);

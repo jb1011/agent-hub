@@ -14,12 +14,12 @@ type Deployment = {
   };
 };
 
-type Service = {
+type Provider = {
   price: BigNumber;
 };
 
 type CreateJobArgs = {
-  service_id: string | number;
+  provider_id: string | number;
   request_id: string;
   input_commitment: string;
   queue_timeout_seconds: string | number;
@@ -130,7 +130,7 @@ function asCreateJobArgs(input: unknown): CreateJobArgs {
   const args = objectInput.create_job_args ?? objectInput;
 
   const requiredFields: Array<keyof CreateJobArgs> = [
-    "service_id",
+    "provider_id",
     "request_id",
     "input_commitment",
     "queue_timeout_seconds",
@@ -268,14 +268,14 @@ async function ensurePaymentAllowance(
   escrow: Contract,
   wallet: Wallet,
   userAddress: string,
-  serviceId: BigNumber,
+  providerId: BigNumber,
   escrowAddress: string
 ): Promise<void> {
   const paymentTokenAddress = await escrow.paymentToken();
   const registryAddress = await escrow.registry();
   const registryArtifact = readArtifact("AgentHubRegistry");
   const registry = new Contract(registryAddress, registryArtifact.abi, wallet);
-  const service = await registry.getService(serviceId) as Service;
+  const registeredProvider = await registry.getProvider(providerId) as Provider;
   const token = new Contract(paymentTokenAddress, ERC20_ABI, wallet);
   const [symbol, decimals, allowance, balance] = await Promise.all([
     readOptionalTokenString(token, "symbol"),
@@ -285,24 +285,24 @@ async function ensurePaymentAllowance(
   ]);
 
   console.log(`Payment token: ${paymentTokenAddress}`);
-  console.log(`Service price: ${utils.formatUnits(service.price, decimals)} ${symbol} (${service.price.toString()})`);
+  console.log(`Provider price: ${utils.formatUnits(registeredProvider.price, decimals)} ${symbol} (${registeredProvider.price.toString()})`);
   console.log(`Current allowance: ${utils.formatUnits(allowance, decimals)} ${symbol} (${allowance.toString()})`);
 
-  if (balance.lt(service.price)) {
+  if (balance.lt(registeredProvider.price)) {
     throw new Error(
       `Insufficient ${symbol} balance. ` +
-        `Need ${utils.formatUnits(service.price, decimals)}, ` +
+        `Need ${utils.formatUnits(registeredProvider.price, decimals)}, ` +
         `wallet has ${utils.formatUnits(balance, decimals)}.`
     );
   }
 
-  if (allowance.gte(service.price)) {
+  if (allowance.gte(registeredProvider.price)) {
     console.log("Allowance is sufficient; skipping approve.");
     return;
   }
 
-  console.log(`Approving ${utils.formatUnits(service.price, decimals)} ${symbol} for escrow...`);
-  const txArgs = [escrowAddress, service.price] as const;
+  console.log(`Approving ${utils.formatUnits(registeredProvider.price, decimals)} ${symbol} for escrow...`);
+  const txArgs = [escrowAddress, registeredProvider.price] as const;
   await token.callStatic.approve(...txArgs);
   const estimatedGas = await token.estimateGas.approve(...txArgs);
   const tx = await token.approve(...txArgs, { gasLimit: estimatedGas.mul(120).div(100) });
@@ -322,7 +322,7 @@ async function main(): Promise<void> {
   const escrow = new Contract(escrowAddress, artifact.abi, wallet);
 
   const userAddress = await wallet.getAddress();
-  const serviceId = asUint(createJobArgs.service_id, "service_id");
+  const providerId = asUint(createJobArgs.provider_id, "provider_id");
   const requestId = createJobArgs.request_id;
   const inputCommitment = createJobArgs.input_commitment;
   const queueTimeoutSeconds = asUint64(createJobArgs.queue_timeout_seconds, "queue_timeout_seconds");
@@ -342,9 +342,9 @@ async function main(): Promise<void> {
     );
   }
 
-  await ensurePaymentAllowance(escrow, wallet, userAddress, serviceId, escrowAddress);
+  await ensurePaymentAllowance(escrow, wallet, userAddress, providerId, escrowAddress);
 
-  const txArgs = [serviceId, requestId, inputCommitment, queueTimeoutSeconds, expiresAt, signature] as const;
+  const txArgs = [providerId, requestId, inputCommitment, queueTimeoutSeconds, expiresAt, signature] as const;
   let gasLimit: BigNumber;
   try {
     await escrow.callStatic.createJob(...txArgs);

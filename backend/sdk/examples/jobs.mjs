@@ -7,7 +7,7 @@
  * Commands:
  *   list       [status]
  *   get        <request_id|job_id>
- *   create     <user_wallet> <service_id> [input_json]
+ *   create     <user_wallet> <provider_id> [input_json]
  *   start-auth <request_id|job_id> [expires_in_seconds]
  *   start      <request_id|job_id> <provider_signature> [expires_at]
  *   finish     <request_id|job_id> <output_json>
@@ -39,7 +39,7 @@ Usage: node examples/jobs.mjs <command> [args]
 
   list       [status]
   get        <request_id|job_id>
-  create     <user_wallet> <service_id> [input_json]
+  create     <user_wallet> <provider_id> [input_json]
   start-auth <request_id|job_id> [expires_in_seconds]
   start      <request_id|job_id> <provider_signature> [expires_at]
   finish     <request_id|job_id> <output_json>
@@ -58,7 +58,7 @@ async function run() {
       const jobs = await client.jobs.list(status ? { status } : undefined);
       console.log(`Found ${jobs.length} job(s):\n`);
       for (const j of jobs) {
-        console.log(`  [${j.request_id}] job_id=${j.job_id ?? "—"}  status=${j.status}  service=${j.service_id}`);
+        console.log(`  [${j.request_id}] job_id=${j.job_id ?? "—"}  status=${j.status}  provider=${j.provider_id}`);
       }
       break;
     }
@@ -73,11 +73,11 @@ async function run() {
     }
 
     case "create": {
-      const [user_wallet, service_id, input_json] = args;
-      if (!user_wallet || !service_id) usage();
+      const [user_wallet, provider_id, input_json] = args;
+      if (!user_wallet || !provider_id) usage();
       const result = await client.jobs.create({
         user_wallet,
-        service_id,
+        provider_id,
         ...(input_json ? { input: JSON.parse(input_json) } : {}),
       });
       console.log("\nCreate job transaction:");

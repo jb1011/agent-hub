@@ -18,10 +18,6 @@
                     "type": "uint256"
                 },
                 {
-                    "name": "serviceId",
-                    "type": "uint256"
-                },
-                {
                     "name": "inputCommitment",
                     "type": "bytes32"
                 },
@@ -38,7 +34,6 @@
         "value": {
             "jobId": "16",
             "providerId": "1",
-            "serviceId": "1",
             "inputCommitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
             "outputCommitment": "0x2222222222222222222222222222222222222222222222222222222222222222",
             "expiresAt": "1893456000"

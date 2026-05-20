@@ -5,18 +5,10 @@ export type {
   PreparedContractTransaction,
   // Providers
   Provider,
-  ProviderWithServices,
   ProviderTrustLevel,
   ProviderStatus,
   CreateProviderInput,
   UpdateProviderInput,
-  // Services
-  Service,
-  ServiceWithProvider,
-  ServiceStatus,
-  CreateServiceInput,
-  UpdateServiceInput,
-  ListServicesQuery,
   // Jobs
   Job,
   JobWithDetails,

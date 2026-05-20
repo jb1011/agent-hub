@@ -78,7 +78,6 @@ contract AgentHubTest is Test {
     AgentHubEscrow private escrow;
 
     uint256 private providerId;
-    uint256 private serviceId;
 
     function setUp() public {
         usdc = new MockUSDC();
@@ -89,8 +88,7 @@ contract AgentHubTest is Test {
         escrow = new AgentHubEscrow(address(config), address(registry));
 
         vm.startPrank(providerOwner);
-        providerId = registry.registerProvider(providerSigner, providerPayout, keccak256("provider metadata"));
-        serviceId = registry.registerService(providerId, 1_000e6, WORK_TIMEOUT, keccak256("service metadata"));
+        providerId = registry.registerProvider(providerSigner, providerPayout, 1_000e6, WORK_TIMEOUT, keccak256("provider metadata"));
         vm.stopPrank();
 
         usdc.mint(user, 10_000e6);
@@ -105,7 +103,6 @@ contract AgentHubTest is Test {
         AgentHubEscrow.Job memory job = escrow.getJob(jobId);
         assertEq(uint8(job.status), uint8(AgentHubEscrow.JobStatus.FUNDED));
         assertEq(job.user, user);
-        assertEq(job.serviceId, serviceId);
         assertEq(job.providerId, providerId);
         assertEq(job.price, 1_000e6);
         assertEq(job.protocolFee, 25e6);
@@ -181,18 +178,6 @@ contract AgentHubTest is Test {
 
         vm.expectRevert(AgentHubEscrow.ProviderNotActive.selector);
         escrow.startJob(jobId, expiresAt, signature);
-    }
-
-    function test_StartJobStillWorksWhenServiceWasDisabledAfterFunding() public {
-        uint256 jobId = _createJob();
-
-        vm.prank(providerOwner);
-        registry.setServiceStatus(serviceId, IAgentHubRegistry.ServiceStatus.DISABLED);
-
-        _startJob(jobId, block.timestamp + 1 hours);
-
-        AgentHubEscrow.Job memory job = escrow.getJob(jobId);
-        assertEq(uint8(job.status), uint8(AgentHubEscrow.JobStatus.RUNNING));
     }
 
     function test_SettlementIsImpossibleBeforeStartJob() public {
@@ -541,56 +526,44 @@ contract AgentHubTest is Test {
         assertEq(usdc.balanceOf(address(escrow)), 0);
     }
 
-    function test_CreateJobRevertsWhenServiceIsPaused() public {
-        vm.prank(providerOwner);
-        registry.setServiceStatus(serviceId, IAgentHubRegistry.ServiceStatus.PAUSED);
-
-        uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signCreateJob(ATTESTER_PK, user, serviceId, REQUEST_ID, keccak256("input"), expiresAt);
-
-        vm.prank(user);
-        vm.expectRevert(AgentHubEscrow.ServiceNotActive.selector);
-        escrow.createJob(serviceId, REQUEST_ID, keccak256("input"), QUEUE_TIMEOUT, expiresAt, signature);
-    }
-
     function test_CreateJobRevertsWhenQueueTimeoutIsBelowOneMinute() public {
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signCreateJob(ATTESTER_PK, user, serviceId, REQUEST_ID, keccak256("input"), expiresAt);
+        bytes memory signature = _signCreateJob(ATTESTER_PK, user, REQUEST_ID, keccak256("input"), expiresAt);
 
         vm.prank(user);
         vm.expectRevert(AgentHubEscrow.QueueTimeoutTooShort.selector);
-        escrow.createJob(serviceId, REQUEST_ID, keccak256("input"), 1 minutes - 1, expiresAt, signature);
+        escrow.createJob(providerId, REQUEST_ID, keccak256("input"), 1 minutes - 1, expiresAt, signature);
     }
 
     function test_CreateJobRevertsWhenAuthorizationExpired() public {
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signCreateJob(ATTESTER_PK, user, serviceId, REQUEST_ID, keccak256("input"), expiresAt);
+        bytes memory signature = _signCreateJob(ATTESTER_PK, user, REQUEST_ID, keccak256("input"), expiresAt);
 
         vm.warp(expiresAt + 1);
         vm.prank(user);
         vm.expectRevert(AgentHubEscrow.AuthorizationExpired.selector);
-        escrow.createJob(serviceId, REQUEST_ID, keccak256("input"), QUEUE_TIMEOUT, expiresAt, signature);
+        escrow.createJob(providerId, REQUEST_ID, keccak256("input"), QUEUE_TIMEOUT, expiresAt, signature);
     }
 
     function test_CreateJobRevertsWithWrongAttesterSignature() public {
         uint256 expiresAt = block.timestamp + 1 hours;
         bytes memory signature =
-            _signCreateJob(PROVIDER_OWNER_PK, user, serviceId, REQUEST_ID, keccak256("input"), expiresAt);
+            _signCreateJob(PROVIDER_OWNER_PK, user, REQUEST_ID, keccak256("input"), expiresAt);
 
         vm.prank(user);
         vm.expectRevert(AgentHubEscrow.InvalidSignature.selector);
-        escrow.createJob(serviceId, REQUEST_ID, keccak256("input"), QUEUE_TIMEOUT, expiresAt, signature);
+        escrow.createJob(providerId, REQUEST_ID, keccak256("input"), QUEUE_TIMEOUT, expiresAt, signature);
     }
 
     function test_CreateJobRevertsWhenSignedForAnotherUser() public {
         address otherUser = address(0xBAD);
         uint256 expiresAt = block.timestamp + 1 hours;
         bytes memory signature =
-            _signCreateJob(ATTESTER_PK, otherUser, serviceId, REQUEST_ID, keccak256("input"), expiresAt);
+            _signCreateJob(ATTESTER_PK, otherUser, REQUEST_ID, keccak256("input"), expiresAt);
 
         vm.prank(user);
         vm.expectRevert(AgentHubEscrow.InvalidSignature.selector);
-        escrow.createJob(serviceId, REQUEST_ID, keccak256("input"), QUEUE_TIMEOUT, expiresAt, signature);
+        escrow.createJob(providerId, REQUEST_ID, keccak256("input"), QUEUE_TIMEOUT, expiresAt, signature);
     }
 
     function test_CreateJobRevertsWhenRequestIdWasAlreadyUsed() public {
@@ -599,42 +572,42 @@ contract AgentHubTest is Test {
         bytes32 otherInputCommitment = keccak256("other input");
         uint256 expiresAt = block.timestamp + 1 hours;
         bytes memory signature =
-            _signCreateJob(ATTESTER_PK, user, serviceId, REQUEST_ID, otherInputCommitment, expiresAt);
+            _signCreateJob(ATTESTER_PK, user, REQUEST_ID, otherInputCommitment, expiresAt);
 
         vm.prank(user);
         vm.expectRevert(AgentHubEscrow.RequestAlreadyUsed.selector);
-        escrow.createJob(serviceId, REQUEST_ID, otherInputCommitment, QUEUE_TIMEOUT, expiresAt, signature);
+        escrow.createJob(providerId, REQUEST_ID, otherInputCommitment, QUEUE_TIMEOUT, expiresAt, signature);
     }
 
-    function test_CreateJobRevertsWhenServicePriceChangedAfterAuthorization() public {
+    function test_CreateJobRevertsWhenProviderPriceChangedAfterAuthorization() public {
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signCreateJob(ATTESTER_PK, user, serviceId, REQUEST_ID, keccak256("input"), expiresAt);
+        bytes memory signature = _signCreateJob(ATTESTER_PK, user, REQUEST_ID, keccak256("input"), expiresAt);
 
         vm.prank(providerOwner);
-        registry.updateServicePrice(serviceId, 2_000e6);
+        registry.updateProviderPrice(providerId, 2_000e6);
 
         vm.prank(user);
         vm.expectRevert(AgentHubEscrow.InvalidSignature.selector);
-        escrow.createJob(serviceId, REQUEST_ID, keccak256("input"), QUEUE_TIMEOUT, expiresAt, signature);
+        escrow.createJob(providerId, REQUEST_ID, keccak256("input"), QUEUE_TIMEOUT, expiresAt, signature);
     }
 
     function test_CreateJobRevertsWhenQueueTimeoutDiffersFromAuthorization() public {
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signCreateJob(ATTESTER_PK, user, serviceId, REQUEST_ID, keccak256("input"), expiresAt);
+        bytes memory signature = _signCreateJob(ATTESTER_PK, user, REQUEST_ID, keccak256("input"), expiresAt);
 
         vm.prank(user);
         vm.expectRevert(AgentHubEscrow.InvalidSignature.selector);
-        escrow.createJob(serviceId, REQUEST_ID, keccak256("input"), QUEUE_TIMEOUT + 1 hours, expiresAt, signature);
+        escrow.createJob(providerId, REQUEST_ID, keccak256("input"), QUEUE_TIMEOUT + 1 hours, expiresAt, signature);
     }
 
     function _createJob() private returns (uint256) {
         bytes32 requestId =
             escrow.nextJobId() == 1 ? REQUEST_ID : keccak256(abi.encode("request-id", escrow.nextJobId()));
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signCreateJob(ATTESTER_PK, user, serviceId, requestId, keccak256("input"), expiresAt);
+        bytes memory signature = _signCreateJob(ATTESTER_PK, user, requestId, keccak256("input"), expiresAt);
 
         vm.prank(user);
-        return escrow.createJob(serviceId, requestId, keccak256("input"), QUEUE_TIMEOUT, expiresAt, signature);
+        return escrow.createJob(providerId, requestId, keccak256("input"), QUEUE_TIMEOUT, expiresAt, signature);
     }
 
     function _startJob(uint256 jobId, uint256 expiresAt) private {
@@ -643,9 +616,7 @@ contract AgentHubTest is Test {
 
     function _signStartJob(uint256 privateKey, uint256 jobId, uint256 expiresAt) private view returns (bytes memory) {
         bytes32 structHash = keccak256(
-            abi.encode(
-                escrow.START_JOB_AUTHORIZATION_TYPEHASH(), jobId, providerId, serviceId, keccak256("input"), expiresAt
-            )
+            abi.encode(escrow.START_JOB_AUTHORIZATION_TYPEHASH(), jobId, providerId, keccak256("input"), expiresAt)
         );
         return _sign(privateKey, _typedDataHash(structHash));
     }
@@ -653,7 +624,6 @@ contract AgentHubTest is Test {
     function _signCreateJob(
         uint256 privateKey,
         address authorizedUser,
-        uint256 authorizedServiceId,
         bytes32 requestId,
         bytes32 inputCommitment,
         uint256 expiresAt
@@ -663,7 +633,6 @@ contract AgentHubTest is Test {
                 escrow.CREATE_JOB_AUTHORIZATION_TYPEHASH(),
                 authorizedUser,
                 providerId,
-                authorizedServiceId,
                 1_000e6,
                 WORK_TIMEOUT,
                 QUEUE_TIMEOUT,
@@ -685,7 +654,6 @@ contract AgentHubTest is Test {
                 escrow.JOB_ACCEPTANCE_TYPEHASH(),
                 jobId,
                 providerId,
-                serviceId,
                 keccak256("input"),
                 outputCommitment,
                 expiresAt
@@ -714,7 +682,6 @@ contract AgentHubTest is Test {
                 escrow.DELIVERY_ATTESTATION_TYPEHASH(),
                 jobId,
                 providerId,
-                serviceId,
                 keccak256("input"),
                 outputCommitment,
                 deliveredAt,
@@ -742,7 +709,6 @@ contract AgentHubTest is Test {
                 escrow.NO_DELIVERY_ATTESTATION_TYPEHASH(),
                 jobId,
                 providerId,
-                serviceId,
                 keccak256("input"),
                 checkedAt,
                 expiresAt

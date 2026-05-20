@@ -48,8 +48,7 @@ Built with **Fastify**, **Prisma 6**, **PostgreSQL**, **Zod**, **TypeScript**.
 
 | Model | Description |
 |---|---|
-| `Provider` | Service provider with wallet addresses and trust level |
-| `Service` | AI/compute service offered by a provider |
+| `Provider` | Provider with wallet addresses, trust level, schema, pricing, timeout, and capacity |
 | `Job` | A unit of work requested by a user wallet |
 | `Escrow` | On-chain escrow record tied to a job |
 
@@ -57,7 +56,6 @@ Built with **Fastify**, **Prisma 6**, **PostgreSQL**, **Zod**, **TypeScript**.
 
 - **ProviderStatus**: `REGISTERED` · `ACTIVE` · `SUSPENDED`
 - **TrustLevel**: `UNVERIFIED` · `VERIFIED` · `CERTIFIED` · `HOSTED`
-- **ServiceStatus**: `REGISTERED` · `ACTIVE` · `INACTIVE` · `SUSPENDED`
 - **JobStatus**: `CREATED` · `FUNDED` · `RUNNING` · `SUBMITTED` · `ACCEPTED` · `SETTLED` · `FAILED` · `EXPIRED` · `REFUNDED` · `DISPUTED`
 - **EscrowStatus**: `UNFUNDED` · `LOCKED` · `RELEASED` · `REFUNDED` · `DISPUTED`
 
@@ -65,7 +63,7 @@ Built with **Fastify**, **Prisma 6**, **PostgreSQL**, **Zod**, **TypeScript**.
 
 ```bash
 npm run db:migrate   # create & apply a new migration
-npm run db:seed      # seed demo provider + service
+npm run db:seed      # seed demo provider
 npm run db:studio    # open Prisma Studio
 ```
 
@@ -76,27 +74,17 @@ npm run db:studio    # open Prisma Studio
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/providers` | List all providers |
-| `GET` | `/providers/:id` | Get provider + services |
+| `GET` | `/providers/:id` | Get provider |
 | `POST` | `/providers` | Create provider |
 | `PATCH` | `/providers/:id` | Update provider |
 | `DELETE` | `/providers/:id` | Delete provider |
-
-#### Services
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/services?provider_id=&status=` | List services (filterable) |
-| `GET` | `/services/:id` | Get service + provider |
-| `POST` | `/services` | Create service |
-| `PATCH` | `/services/:id` | Update service |
-| `DELETE` | `/services/:id` | Delete service |
 
 #### Jobs
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/jobs?user_wallet=&service_id=&status=` | List jobs (filterable) |
-| `GET` | `/jobs/:id` | Get job + escrow + service |
+| `GET` | `/jobs?user_wallet=&provider_id=&status=` | List jobs (filterable) |
+| `GET` | `/jobs/:id` | Get job + escrow + provider |
 | `POST` | `/jobs` | Create job (`CREATED`) |
 | `PATCH` | `/jobs/:id/status` | Transition job status |
 
@@ -138,7 +126,7 @@ Built with **Next.js 15** (App Router), **Tailwind CSS v4**, **TypeScript**.
 |---|---|
 | `NEXT_PUBLIC_API_BASE_URL` | Backend URL (default `http://localhost:3000`) |
 
-The homepage is a **server component** that fetches providers and services from the backend at render time and displays them as a card grid with trust badges and status indicators.
+The homepage fetches providers from the backend and displays them as a card grid with trust badges and status indicators.
 
 ---
 
@@ -147,7 +135,7 @@ The homepage is a **server component** that fetches providers and services from 
 | Path | Purpose |
 |---|---|
 | `backend/` | Fastify API, Prisma schema, migrations, seed |
-| `backend/src/routes/` | `providers.ts` · `services.ts` · `jobs.ts` · `escrows.ts` |
+| `backend/src/routes/` | `providers.ts` · `jobs.ts` |
 | `backend/src/lib/` | Prisma client, HTTP error helpers, serializers |
 | `backend/prisma/` | `schema.prisma`, migrations, seed |
 | `frontend/` | Next.js 15 App Router |

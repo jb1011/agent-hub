@@ -11,7 +11,7 @@ import {
 import { CreateJobAuthorizationError } from "./create-job-authorization.js";
 
 const ESCROW_ABI = [
-  "function getJob(uint256 jobId) view returns (tuple(address user,address providerPayoutWallet,address treasury,address deliveryAttester,uint256 serviceId,uint256 providerId,uint256 price,uint256 protocolFee,uint64 queueDeadline,uint64 startedAt,uint64 workTimeout,uint64 workDeadline,uint64 reviewTimeout,uint64 finalRefundDeadline,uint64 deliveredAt,uint64 settledAt,uint64 refundedAt,uint8 status,bytes32 requestId,bytes32 inputCommitment,bytes32 outputCommitment))",
+  "function getJob(uint256 jobId) view returns (tuple(address user,address providerPayoutWallet,address treasury,address deliveryAttester,uint256 providerId,uint256 price,uint256 protocolFee,uint64 queueDeadline,uint64 startedAt,uint64 workTimeout,uint64 workDeadline,uint64 reviewTimeout,uint64 finalRefundDeadline,uint64 deliveredAt,uint64 settledAt,uint64 refundedAt,uint8 status,bytes32 requestId,bytes32 inputCommitment,bytes32 outputCommitment))",
   "function startJob(uint256 jobId, uint256 expiresAt, bytes providerSignature)",
   "function settleWithUserSignature(uint256 jobId, bytes32 outputCommitment, uint256 expiresAt, bytes userSignature)",
   "function settleAfterReviewTimeout(uint256 jobId, bytes32 outputCommitment, uint256 deliveredAt, uint256 expiresAt, bytes deliveryAttesterSignature)",
@@ -43,7 +43,6 @@ type EthersError = {
 
 type EscrowJob = {
   providerId: bigint;
-  serviceId: bigint;
   queueDeadline: bigint;
   workTimeout: bigint;
   workDeadline: bigint;

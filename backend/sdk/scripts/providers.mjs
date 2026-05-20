@@ -7,13 +7,13 @@
  * Commands:
  *   list
  *   get        <provider_id>
- *   create     <provider_id> <name> <owner_wallet> <payout_wallet> <api_base_url>
+ *   create     <provider_id> <name> <owner_wallet> <payout_wallet> <api_base_url> <service_type> <price_usdc>
  *   update     <provider_id> <json_patch>
  *
  * Examples:
  *   node scripts/providers.mjs list
  *   node scripts/providers.mjs get 123
- *   node scripts/providers.mjs create 42 "My Agent" 0xabc 0xabc https://my-agent.xyz
+ *   node scripts/providers.mjs create 42 "My Agent" 0xabc 0xabc https://my-agent.xyz text_generation 1
  *   node scripts/providers.mjs update 42 '{"status":"ACTIVE"}'
  */
 
@@ -30,7 +30,7 @@ Usage: node scripts/providers.mjs <command> [args]
 
   list
   get        <provider_id>
-  create     <provider_id> <name> <owner_wallet> <payout_wallet> <api_base_url>
+  create     <provider_id> <name> <owner_wallet> <payout_wallet> <api_base_url> <service_type> <price_usdc>
   update     <provider_id> <json_patch>
 `);
   process.exit(1);
@@ -57,14 +57,20 @@ async function run() {
     }
 
     case "create": {
-      const [provider_id, name, owner_wallet, payout_wallet, api_base_url] = args;
-      if (!provider_id || !name || !owner_wallet || !payout_wallet || !api_base_url) usage();
+      const [provider_id, name, owner_wallet, payout_wallet, api_base_url, service_type, price_usdc] = args;
+      if (!provider_id || !name || !owner_wallet || !payout_wallet || !api_base_url || !service_type || !price_usdc) {
+        usage();
+      }
       const created = await client.providers.create({
         provider_id,
         name,
         owner_wallet,
         payout_wallet,
         api_base_url,
+        service_type,
+        price_usdc: Number(price_usdc),
+        max_concurrent_jobs: 1,
+        timeout_seconds: 300,
       });
       console.log("\nCreate provider transaction:");
       console.log(JSON.stringify(created, null, 2));

@@ -77,7 +77,7 @@ Set `RPC_URL` and `WALLET_USER_PRIVATE_KEY` in `.env`. `AGENT_HUB_ESCROW_ADDRESS
 Then pass either the full API response object or the nested `create_job_args` object:
 
 ```shell
-$ npm run create-job -- '{"create_job_args":{"service_id":"1","request_id":"0x428532fb5bc6f3163b2dce769dfe3d70c397632386307ede126ab51184a860e0","input_commitment":"0x84dfc6b9fdcbb76398888160e7593d4a8c307927173d817ec507d7b5b6ba86b2","queue_timeout_seconds":3600,"expires_at":1778974718,"delivery_attester_signature":"0xdd180a7003b0d7f6e8d21b6547e30942020e847771ef775e53f510580c54c281431045a9761f651d7f0fbece4e7e0a99468a6cdefc905bcf5190355c34e247901b"}}'
+$ npm run create-job -- '{"create_job_args":{"provider_id":"1","request_id":"0x428532fb5bc6f3163b2dce769dfe3d70c397632386307ede126ab51184a860e0","input_commitment":"0x84dfc6b9fdcbb76398888160e7593d4a8c307927173d817ec507d7b5b6ba86b2","queue_timeout_seconds":3600,"expires_at":1778974718,"delivery_attester_signature":"0xdd180a7003b0d7f6e8d21b6547e30942020e847771ef775e53f510580c54c281431045a9761f651d7f0fbece4e7e0a99468a6cdefc905bcf5190355c34e247901b"}}'
 ```
 
 For larger payloads, use a JSON file:
@@ -156,23 +156,9 @@ Then pass either the full API response object or the nested `settle_with_user_si
 $ npm run settle-with-user-signature -- --file args/settle-with-user-signature-args.json
 ```
 
-### Register Provider And Service
+### Register Provider
 
-Set `RPC_URL` and `WALLET_PROVIDER_PRIVATE_KEY` in `.env`. `AGENT_HUB_REGISTRY_ADDRESS` is optional when `deployments/<chainId>.json` exists.
-
-Run with the default demo provider/service metadata:
-
-```shell
-$ npm run register-provider-service
-```
-
-Or provide metadata files:
-
-```shell
-$ npm run register-provider-service -- --provider-file provider.json --service-file service.json
-```
-
-The script hashes each JSON object into `metadataCommitment`, calls `registerProvider`, then uses the emitted provider id to call `registerService`. `price_usdc` is converted to USDC base units with 6 decimals.
+Provider registration now happens through the backend `/providers` endpoint, which returns a prepared `registerProvider` transaction. The provider metadata includes `service_type`, schemas, `price_usdc`, `max_concurrent_jobs`, and `timeout_seconds`.
 
 ### Sign And Send Transaction
 

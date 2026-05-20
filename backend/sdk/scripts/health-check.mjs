@@ -28,18 +28,21 @@ const created = await client.providers.create({
   owner_wallet:  "0x000000000000000000000000000000000000dead",
   payout_wallet: "0x000000000000000000000000000000000000dead",
   api_base_url: "https://example.com",
+  service_type: "text_generation",
+  price_usdc: 1,
+  max_concurrent_jobs: 1,
+  timeout_seconds: 300,
 });
-console.log("providers.create() →", created.provider_id, created.name);
+console.log("providers.create() → prepared tx to", created.to);
 
-// Get by ID (includes services)
-const fetched = await client.providers.get(created.provider_id);
-console.log("providers.get()  →", fetched.name, "| services:", fetched.services.length);
+// Get by ID
+const fetched = await client.providers.get("999999");
+console.log("providers.get()  →", fetched.name, "| type:", fetched.service_type);
 
 // Update
-const updated = await client.providers.update(created.provider_id, { name: "Updated Provider" });
+const updated = await client.providers.update("999999", { name: "Updated Provider" });
 console.log("providers.update() →", updated.name);
 
 // Delete
-await client.providers.delete(created.provider_id);
+await client.providers.delete("999999");
 console.log("providers.delete() → done");
-

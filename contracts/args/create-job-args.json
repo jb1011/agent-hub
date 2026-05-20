@@ -1,6 +1,6 @@
 {
   "create_job_args": {
-        "service_id": "1",
+        "provider_id": "1",
         "request_id": "0x310c1cd33867b2fa1d50d05dded70ad9d61cc57287229b41a9bcd1251e0d3134",
         "input_commitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
         "queue_timeout_seconds": 3600,

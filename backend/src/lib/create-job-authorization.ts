@@ -16,7 +16,6 @@ const CREATE_JOB_TYPES: Record<string, TypedDataField[]> = {
   CreateJobAuthorization: [
     { name: "user", type: "address" },
     { name: "providerId", type: "uint256" },
-    { name: "serviceId", type: "uint256" },
     { name: "price", type: "uint256" },
     { name: "workTimeout", type: "uint64" },
     { name: "queueTimeoutSeconds", type: "uint64" },
@@ -30,7 +29,6 @@ const START_JOB_TYPES: Record<string, TypedDataField[]> = {
   StartJobAuthorization: [
     { name: "jobId", type: "uint256" },
     { name: "providerId", type: "uint256" },
-    { name: "serviceId", type: "uint256" },
     { name: "inputCommitment", type: "bytes32" },
     { name: "expiresAt", type: "uint256" },
   ],
@@ -40,7 +38,6 @@ const JOB_ACCEPTANCE_TYPES: Record<string, TypedDataField[]> = {
   JobAcceptance: [
     { name: "jobId", type: "uint256" },
     { name: "providerId", type: "uint256" },
-    { name: "serviceId", type: "uint256" },
     { name: "inputCommitment", type: "bytes32" },
     { name: "outputCommitment", type: "bytes32" },
     { name: "expiresAt", type: "uint256" },
@@ -51,7 +48,6 @@ const DELIVERY_ATTESTATION_TYPES: Record<string, TypedDataField[]> = {
   DeliveryAttestation: [
     { name: "jobId", type: "uint256" },
     { name: "providerId", type: "uint256" },
-    { name: "serviceId", type: "uint256" },
     { name: "inputCommitment", type: "bytes32" },
     { name: "outputCommitment", type: "bytes32" },
     { name: "deliveredAt", type: "uint256" },
@@ -63,7 +59,6 @@ const NO_DELIVERY_ATTESTATION_TYPES: Record<string, TypedDataField[]> = {
   NoDeliveryAttestation: [
     { name: "jobId", type: "uint256" },
     { name: "providerId", type: "uint256" },
-    { name: "serviceId", type: "uint256" },
     { name: "inputCommitment", type: "bytes32" },
     { name: "checkedAt", type: "uint256" },
     { name: "expiresAt", type: "uint256" },
@@ -73,7 +68,6 @@ const NO_DELIVERY_ATTESTATION_TYPES: Record<string, TypedDataField[]> = {
 type CreateJobAuthorizationParams = {
   userWallet: string;
   providerId: string;
-  serviceId: string;
   priceUsdc: string;
   workTimeoutSeconds: number;
   queueTimeoutSeconds?: number;
@@ -88,7 +82,6 @@ type CreateJobAuthorizationParams = {
 type JobAuthorizationBaseParams = {
   jobId: string;
   providerId: string;
-  serviceId: string;
   inputCommitment: string;
   expiresAt?: number;
   expiresInSeconds?: number;
@@ -304,7 +297,6 @@ export async function signCreateJobAuthorization(params: CreateJobAuthorizationP
   const value = {
     user: normalizeAddress(params.userWallet, "user_wallet"),
     providerId: uint256(params.providerId, "provider_id"),
-    serviceId: uint256(params.serviceId, "service_id"),
     price: parseUnits(params.priceUsdc, 6),
     workTimeout: BigInt(positiveSafeInteger(params.workTimeoutSeconds, "work_timeout_seconds")),
     queueTimeoutSeconds: BigInt(queueTimeoutSeconds),
@@ -319,7 +311,7 @@ export async function signCreateJobAuthorization(params: CreateJobAuthorizationP
 
   return {
     user_wallet: value.user,
-    service_id: value.serviceId.toString(),
+    provider_id: value.providerId.toString(),
     request_id: requestId,
     input_commitment: inputCommitment,
     queue_timeout_seconds: queueTimeoutSeconds,
@@ -333,7 +325,6 @@ export function buildStartJobAuthorization(params: JobAuthorizationBaseParams) {
   const value = {
     jobId: uint256(params.jobId, "job_id").toString(),
     providerId: uint256(params.providerId, "provider_id").toString(),
-    serviceId: uint256(params.serviceId, "service_id").toString(),
     inputCommitment: normalizeBytes32(params.inputCommitment, "input_commitment"),
     expiresAt: expiresAt.toString(),
   };
@@ -352,7 +343,6 @@ export function buildJobAcceptance(params: JobOutputParams) {
   const value = {
     jobId: uint256(params.jobId, "job_id").toString(),
     providerId: uint256(params.providerId, "provider_id").toString(),
-    serviceId: uint256(params.serviceId, "service_id").toString(),
     inputCommitment: normalizeBytes32(params.inputCommitment, "input_commitment"),
     outputCommitment: normalizeBytes32(params.outputCommitment, "output_commitment"),
     expiresAt: expiresAt.toString(),
@@ -374,7 +364,6 @@ export async function signDeliveryAttestation(params: DeliveryAttestationParams)
   const value = {
     jobId: uint256(params.jobId, "job_id").toString(),
     providerId: uint256(params.providerId, "provider_id").toString(),
-    serviceId: uint256(params.serviceId, "service_id").toString(),
     inputCommitment: normalizeBytes32(params.inputCommitment, "input_commitment"),
     outputCommitment: normalizeBytes32(params.outputCommitment, "output_commitment"),
     deliveredAt: deliveredAt.toString(),
@@ -407,7 +396,6 @@ export async function signNoDeliveryAttestation(params: NoDeliveryAttestationPar
   const value = {
     jobId: uint256(params.jobId, "job_id").toString(),
     providerId: uint256(params.providerId, "provider_id").toString(),
-    serviceId: uint256(params.serviceId, "service_id").toString(),
     inputCommitment: normalizeBytes32(params.inputCommitment, "input_commitment"),
     checkedAt: checkedAt.toString(),
     expiresAt: expiresAt.toString(),

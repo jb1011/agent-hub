@@ -9,30 +9,16 @@ interface IAgentHubRegistry {
         DISABLED
     }
 
-    enum ServiceStatus {
-        NONE,
-        ACTIVE,
-        PAUSED,
-        DISABLED
-    }
-
     struct Provider {
         address owner;
         address signer;
         address payoutWallet;
+        uint256 price;
+        uint64 workTimeout;
         ProviderStatus status;
         uint8 trustLevel;
         bytes32 metadataCommitment;
     }
 
-    struct Service {
-        uint256 providerId;
-        uint256 price;
-        uint64 workTimeout;
-        ServiceStatus status;
-        bytes32 metadataCommitment;
-    }
-
     function getProvider(uint256 providerId) external view returns (Provider memory);
-    function getService(uint256 serviceId) external view returns (Service memory);
 }

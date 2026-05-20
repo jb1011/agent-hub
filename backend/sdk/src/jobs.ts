@@ -36,14 +36,14 @@ export class JobsResource {
     if (query?.request_id) params.set("request_id", query.request_id);
     if (query?.job_id) params.set("job_id", query.job_id);
     if (query?.user_wallet) params.set("user_wallet", query.user_wallet);
-    if (query?.service_id) params.set("service_id", query.service_id);
+    if (query?.provider_id) params.set("provider_id", query.provider_id);
     if (query?.status) params.set("status", query.status);
     const qs = params.size > 0 ? `?${params}` : "";
     return this.request<Job[]>(`/jobs${qs}`);
   }
 
   /**
-   * Get a job by request_id or job_id (includes escrow and service info).
+   * Get a job by request_id or job_id (includes escrow and provider info).
    * GET /jobs/:id
    */
   get(id: string): Promise<JobWithDetails> {

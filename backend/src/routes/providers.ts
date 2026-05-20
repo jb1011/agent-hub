@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { Prisma } from "@prisma/client";
 import { isAddress } from "ethers";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { serializeProvider } from "../lib/serialize.js";
 import { notFound, sendZodError } from "../lib/http-errors.js";
@@ -11,6 +12,11 @@ import { agentHubRegistryAddress, buildRegisterProviderCall } from "../lib/regis
 const evmAddressSchema = (fieldName: string) =>
   z.string().refine(isAddress, `${fieldName}_must_be_evm_address`);
 
+const usdcAmountSchema = z
+  .number()
+  .positive()
+  .refine((value) => /^\d+(\.\d{1,6})?$/.test(value.toString()), "price_usdc_must_have_up_to_6_decimals");
+
 const createSchema = z.object({
   provider_id: uint256StringSchema("provider_id"),
   name: z.string().min(1),
@@ -19,6 +25,12 @@ const createSchema = z.object({
   payout_wallet: evmAddressSchema("payout_wallet"),
   api_base_url: z.string().url(),
   trust_level: z.enum(["UNVERIFIED", "VERIFIED", "CERTIFIED", "HOSTED"]).optional(),
+  service_type: z.string().min(1),
+  input_schema: z.unknown().optional(),
+  output_schema: z.unknown().optional(),
+  price_usdc: usdcAmountSchema,
+  max_concurrent_jobs: z.number().int().positive(),
+  timeout_seconds: z.number().int().positive().optional(),
   status: z.enum(["REGISTERED", "ACTIVE", "SUSPENDED"]).optional(),
 });
 
@@ -36,6 +48,12 @@ const providerResponseSchema = z.object({
   payout_wallet: z.string(),
   api_base_url: z.string(),
   trust_level: z.string(),
+  service_type: z.string(),
+  input_schema: z.unknown().nullable(),
+  output_schema: z.unknown().nullable(),
+  price_usdc: z.string(),
+  max_concurrent_jobs: z.number(),
+  timeout_seconds: z.number().nullable(),
   status: z.string(),
   created_at: z.string(),
   updated_at: z.string(),
@@ -66,19 +84,10 @@ export async function providersRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>("/providers/:id", {
     schema: {
       tags: ["Providers"],
-      summary: "Get a provider by ID (includes services)",
+      summary: "Get a provider by ID",
       params: idParamsSchema,
       response: {
-        200: providerResponseSchema.extend({
-          services: z.array(
-            z.object({
-              service_id: z.string(),
-              name: z.string(),
-              max_concurrent_jobs: z.number(),
-              status: z.string(),
-            })
-          ),
-        }),
+        200: providerResponseSchema,
         404: z.object({ error: z.string() }),
       },
     },
@@ -87,18 +96,9 @@ export async function providersRoutes(app: FastifyInstance) {
     if (!params.success) return sendZodError(reply, params.error);
     const provider = await prisma.provider.findUnique({
       where: { provider_id: params.data.id },
-      include: { services: true },
     });
     if (!provider) return notFound(reply);
-    return reply.send({
-      ...serializeProvider(provider),
-      services: provider.services.map((s) => ({
-        service_id: s.service_id,
-        name: s.name,
-        max_concurrent_jobs: s.max_concurrent_jobs,
-        status: s.status,
-      })),
-    });
+    return reply.send(serializeProvider(provider));
   });
 
   app.post("/providers", {
@@ -116,18 +116,14 @@ export async function providersRoutes(app: FastifyInstance) {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     agentHubRegistryAddress();
-    try {
-      const provider = await prisma.provider.create({ data: parsed.data });
-      return reply.status(201).send(buildRegisterProviderCall(serializeProvider(provider)).transaction);
-    } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === "P2002"
-      ) {
-        return reply.status(409).send({ error: "provider_id_already_exists" });
-      }
-      throw err;
-    }
+    const provider = await prisma.provider.create({
+      data: {
+        ...parsed.data,
+        input_schema: parsed.data.input_schema as Prisma.InputJsonValue ?? undefined,
+        output_schema: parsed.data.output_schema as Prisma.InputJsonValue ?? undefined,
+      },
+    });
+    return reply.status(201).send(buildRegisterProviderCall(serializeProvider(provider)).transaction);
   });
 
   app.patch<{ Params: { id: string } }>("/providers/:id", {
@@ -153,7 +149,11 @@ export async function providersRoutes(app: FastifyInstance) {
     if (!existing) return notFound(reply);
     const provider = await prisma.provider.update({
       where: { provider_id: params.data.id },
-      data: parsed.data,
+      data: {
+        ...parsed.data,
+        input_schema: parsed.data.input_schema as Prisma.InputJsonValue ?? undefined,
+        output_schema: parsed.data.output_schema as Prisma.InputJsonValue ?? undefined,
+      },
     });
     return reply.send(serializeProvider(provider));
   });

@@ -66,8 +66,8 @@ const transaction = await client.jobs.create(job);
 console.log("\nPrepared createJob transaction:");
 console.log(JSON.stringify(transaction, null, 2));
 
-const service = await client.services.get(job.service_id);
-const requiredPayment = parseUnits(service.price_usdc, 6);
+const provider = await client.providers.get(job.provider_id);
+const requiredPayment = parseUnits(provider.price_usdc, 6);
 
 if (process.env.SIGNER_WALLET_PK?.trim()) {
   await ensurePaymentAllowance(job.user_wallet, transaction.to, requiredPayment);

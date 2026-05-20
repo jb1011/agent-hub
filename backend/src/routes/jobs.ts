@@ -47,7 +47,7 @@ const createSchema = z.object({
   job_id: z.string().min(1).optional(),
   request_id: z.string().refine(isBytes32, "request_id must be bytes32").optional(),
   user_wallet: z.string().min(1),
-  service_id: uint256StringSchema("service_id"),
+  provider_id: uint256StringSchema("provider_id"),
   input: z.unknown().optional(),
   input_hash: z.string().optional(),
   input_commitment: z.string().refine(isBytes32, "input_commitment must be bytes32").optional(),
@@ -86,7 +86,7 @@ const jobResponseSchema = z.object({
   request_id: z.string(),
   job_id: z.string().nullable(),
   user_wallet: z.string(),
-  service_id: z.string(),
+  provider_id: z.string(),
   status: z.string(),
   input: z.unknown().nullable(),
   input_hash: z.string().nullable(),
@@ -121,7 +121,7 @@ const listQuerySchema = z.object({
   request_id: z.string().optional(),
   job_id: z.string().optional(),
   user_wallet: z.string().optional(),
-  service_id: uint256StringSchema("service_id").optional(),
+  provider_id: uint256StringSchema("provider_id").optional(),
   status: z.enum(JOB_STATUS).optional(),
 });
 
@@ -149,23 +149,23 @@ function secondsFromEnv(name: string, fallback: number): number {
   return value;
 }
 
-async function getJobWithService(id: string) {
+async function getJobWithProvider(id: string) {
   return prisma.job.findFirst({
     where: { OR: [{ request_id: id }, { job_id: id }] },
-    include: { service: true },
+    include: { provider: true },
   });
 }
 
-async function runningCapacityForService(serviceId: string) {
+async function runningCapacityForProvider(providerId: string) {
   return prisma.job.count({
     where: {
-      service_id: serviceId,
+      provider_id: providerId,
       status: { in: CAPACITY_JOB_STATUSES },
     },
   });
 }
 
-async function ensureStartable(job: Awaited<ReturnType<typeof getJobWithService>>) {
+async function ensureStartable(job: Awaited<ReturnType<typeof getJobWithProvider>>) {
   if (!job) return "job_not_found";
   if (!job.job_id) return "job_not_funded_onchain";
   if (!job.input_hash) return "input_commitment_missing";
@@ -173,19 +173,18 @@ async function ensureStartable(job: Awaited<ReturnType<typeof getJobWithService>
   if (job.queue_deadline && job.queue_deadline.getTime() <= Date.now()) {
     return "queue_deadline_expired";
   }
-  const activeJobs = await runningCapacityForService(job.service_id);
-  if (activeJobs >= job.service.max_concurrent_jobs) return "service_capacity_exceeded";
+  const activeJobs = await runningCapacityForProvider(job.provider_id);
+  if (activeJobs >= job.provider.max_concurrent_jobs) return "provider_capacity_exceeded";
   return null;
 }
 
-function ensureOnchainJob(job: Awaited<ReturnType<typeof getJobWithService>>) {
+function ensureOnchainJob(job: Awaited<ReturnType<typeof getJobWithProvider>>) {
   if (!job) throw new CreateJobAuthorizationError("job_not_found", 404);
   if (!job.job_id) throw new CreateJobAuthorizationError("job_not_funded_onchain", 409);
   if (!job.input_hash) throw new CreateJobAuthorizationError("input_commitment_missing", 409);
   return {
     jobId: job.job_id,
-    providerId: job.service.provider_id,
-    serviceId: job.service_id,
+    providerId: job.provider_id,
     inputCommitment: job.input_hash,
   };
 }
@@ -301,7 +300,7 @@ function parseSettleAfterReviewTimeoutArgs(value: unknown): SettleAfterReviewTim
 }
 
 async function settleAfterReviewTimeoutArgsForJob(
-  job: NonNullable<Awaited<ReturnType<typeof getJobWithService>>>,
+  job: NonNullable<Awaited<ReturnType<typeof getJobWithProvider>>>,
   logger?: FastifyBaseLogger
 ): Promise<SettleAfterReviewTimeoutArgs | null> {
   const nowSeconds = Math.floor(Date.now() / 1000);
@@ -348,7 +347,7 @@ async function settleAfterReviewTimeoutArgsForJob(
 }
 
 async function settleJobAfterReviewTimeout(
-  job: NonNullable<Awaited<ReturnType<typeof getJobWithService>>>,
+  job: NonNullable<Awaited<ReturnType<typeof getJobWithProvider>>>,
   logger?: FastifyBaseLogger
 ) {
   if (!job.review_deadline || job.review_deadline.getTime() >= Date.now()) return null;
@@ -410,7 +409,7 @@ async function settleJobAfterReviewTimeout(
 }
 
 async function issueNoDeliveryAttestation(
-  job: NonNullable<Awaited<ReturnType<typeof getJobWithService>>>,
+  job: NonNullable<Awaited<ReturnType<typeof getJobWithProvider>>>,
   checkedAt = Math.floor(Date.now() / 1000)
 ) {
   if (job.status !== JobStatus.RUNNING || job.delivered_at || !job.work_deadline) return null;
@@ -456,7 +455,7 @@ export async function emitExpiredNoDeliveryAttestations(logger?: FastifyBaseLogg
       delivered_at: null,
       work_deadline: { lt: new Date() },
     },
-    include: { service: true },
+    include: { provider: true },
     orderBy: { work_deadline: "asc" },
     take: 50,
   });
@@ -512,7 +511,7 @@ export async function settleExpiredReviewTimeouts(logger?: FastifyBaseLogger) {
       settled_at: null,
       review_deadline: { lt: new Date() },
     },
-    include: { service: true },
+    include: { provider: true },
     orderBy: { review_deadline: "asc" },
     take: secondsFromEnv("REVIEW_TIMEOUT_SETTLEMENT_WORKER_BATCH_SIZE", 25),
   });
@@ -606,7 +605,7 @@ export async function jobsRoutes(app: FastifyInstance) {
           ...(query.data.request_id ? { request_id: query.data.request_id } : {}),
           ...(query.data.job_id ? { job_id: query.data.job_id } : {}),
           ...(query.data.user_wallet ? { user_wallet: query.data.user_wallet } : {}),
-          ...(query.data.service_id ? { service_id: query.data.service_id } : {}),
+          ...(query.data.provider_id ? { provider_id: query.data.provider_id } : {}),
           ...(query.data.status ? { status: query.data.status } : {}),
         }
       : {};
@@ -620,13 +619,13 @@ export async function jobsRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>("/jobs/:id", {
     schema: {
       tags: ["Jobs"],
-      summary: "Get a job by request_id or job_id (includes escrow and service info)",
+      summary: "Get a job by request_id or job_id (includes escrow and provider info)",
       params: idParamsSchema,
       response: {
         200: jobResponseSchema.extend({
           escrow: z.unknown().nullable(),
-          service: z.object({
-            service_id: z.string(),
+          provider: z.object({
+            provider_id: z.string(),
             name: z.string(),
             price_usdc: z.string(),
           }),
@@ -637,16 +636,16 @@ export async function jobsRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const job = await prisma.job.findFirst({
       where: { OR: [{ request_id: req.params.id }, { job_id: req.params.id }] },
-      include: { escrow: true, service: true },
+      include: { escrow: true, provider: true },
     });
     if (!job) return notFound(reply);
     return reply.send({
       ...serializeJob(job),
       escrow: job.escrow ? serializeEscrow(job.escrow) : null,
-      service: {
-        service_id: job.service.service_id,
-        name: job.service.name,
-        price_usdc: job.service.price_usdc.toString(),
+      provider: {
+        provider_id: job.provider.provider_id,
+        name: job.provider.name,
+        price_usdc: job.provider.price_usdc.toString(),
       },
     });
   });
@@ -667,10 +666,10 @@ export async function jobsRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
-    const service = await prisma.service.findUnique({
-      where: { service_id: parsed.data.service_id }
+    const provider = await prisma.provider.findUnique({
+      where: { provider_id: parsed.data.provider_id }
     });
-    if (!service) return notFound(reply, "service_not_found");
+    if (!provider) return notFound(reply, "provider_not_found");
 
     if (parsed.data.request_id) {
       const existing = await prisma.job.findUnique({
@@ -682,10 +681,9 @@ export async function jobsRoutes(app: FastifyInstance) {
     try {
       const authorization = await signCreateJobAuthorization({
         userWallet: parsed.data.user_wallet,
-        providerId: service.provider_id,
-        serviceId: service.service_id,
-        priceUsdc: service.price_usdc.toString(),
-        workTimeoutSeconds: service.timeout_seconds,
+        providerId: provider.provider_id,
+        priceUsdc: provider.price_usdc.toString(),
+        workTimeoutSeconds: provider.timeout_seconds,
         requestId: parsed.data.request_id,
         inputCommitment: parsed.data.input_commitment,
         inputHash: parsed.data.input_hash,
@@ -699,7 +697,7 @@ export async function jobsRoutes(app: FastifyInstance) {
         data: {
           request_id: authorization.request_id,
           user_wallet: authorization.user_wallet,
-          service_id: parsed.data.service_id,
+          provider_id: parsed.data.provider_id,
           input: parsed.data.input === undefined ? undefined : (parsed.data.input as Prisma.InputJsonValue),
           input_hash: authorization.input_commitment,
           work_deadline: parsed.data.work_deadline
@@ -712,7 +710,7 @@ export async function jobsRoutes(app: FastifyInstance) {
       });
 
       return reply.status(201).send(buildCreateJobTransaction({
-        serviceId: authorization.service_id,
+        providerId: authorization.provider_id,
         requestId: authorization.request_id,
         inputCommitment: authorization.input_commitment,
         queueTimeoutSeconds: authorization.queue_timeout_seconds,
@@ -751,7 +749,7 @@ export async function jobsRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const parsed = authExpirySchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
-    const job = await getJobWithService(req.params.id);
+    const job = await getJobWithProvider(req.params.id);
     const notStartable = await ensureStartable(job);
     if (notStartable === "job_not_found") return notFound(reply);
     if (notStartable) return conflict(reply, notStartable);
@@ -793,7 +791,7 @@ export async function jobsRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const parsed = providerSignatureSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
-    const job = await getJobWithService(req.params.id);
+    const job = await getJobWithProvider(req.params.id);
     const notStartable = await ensureStartable(job);
     if (notStartable === "job_not_found") return notFound(reply);
     if (notStartable) return conflict(reply, notStartable);
@@ -872,17 +870,17 @@ export async function jobsRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const parsed = deliveryAttestationSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
-    const job = await getJobWithService(req.params.id);
+    const job = await getJobWithProvider(req.params.id);
     if (!job) return notFound(reply);
     if (job.status !== JobStatus.RUNNING) {
       return conflict(reply, `job_not_running_status_${job.status}`);
     }
 
     try {
-      if (job.service.output_schema && parsed.data.output === undefined) {
+      if (job.provider.output_schema && parsed.data.output === undefined) {
         return reply.status(400).send({ error: "output_required_for_schema_validation" });
       }
-      const schemaError = validateJsonSchemaShape(parsed.data.output, job.service.output_schema);
+      const schemaError = validateJsonSchemaShape(parsed.data.output, job.provider.output_schema);
       if (schemaError) return reply.status(400).send({ error: schemaError });
 
       const deliveredAt = Math.floor(Date.now() / 1000);
@@ -964,7 +962,7 @@ export async function jobsRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const parsed = outputCommitmentSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
-    const job = await getJobWithService(req.params.id);
+    const job = await getJobWithProvider(req.params.id);
     if (!job) return notFound(reply);
     if (!isStatus(job.status, [JobStatus.RUNNING, JobStatus.SUBMITTED, JobStatus.ACCEPTED])) {
       return conflict(reply, `job_not_acceptance_ready_status_${job.status}`);
@@ -1025,7 +1023,7 @@ export async function jobsRoutes(app: FastifyInstance) {
     const parsed = acceptanceSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
 
-    const job = await getJobWithService(req.params.id);
+    const job = await getJobWithProvider(req.params.id);
     if (!job) return notFound(reply);
     if (!isStatus(job.status, [JobStatus.SUBMITTED, JobStatus.ACCEPTED])) {
       return conflict(reply, `job_not_submitted_status_${job.status}`);
@@ -1106,7 +1104,7 @@ export async function jobsRoutes(app: FastifyInstance) {
       },
     },
   }, async (req, reply) => {
-    const job = await getJobWithService(req.params.id);
+    const job = await getJobWithProvider(req.params.id);
     if (!job) return notFound(reply);
     if (!job.job_id) return conflict(reply, "job_not_funded_onchain");
     if (job.status !== JobStatus.FUNDED) return conflict(reply, `job_not_queued_status_${job.status}`);
@@ -1132,7 +1130,7 @@ export async function jobsRoutes(app: FastifyInstance) {
       },
     },
   }, async (req, reply) => {
-    const job = await getJobWithService(req.params.id);
+    const job = await getJobWithProvider(req.params.id);
     if (!job) return notFound(reply);
     if (!job.job_id) return conflict(reply, "job_not_funded_onchain");
     if (!isStatus(job.status, [JobStatus.RUNNING, JobStatus.SUBMITTED, JobStatus.ACCEPTED, JobStatus.FAILED])) {
