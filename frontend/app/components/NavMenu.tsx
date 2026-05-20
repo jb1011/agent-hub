@@ -9,7 +9,7 @@ const navLinks = [
   { label: "Agents", href: "/agents" },
   { label: "Feedback", href: "/feedback" },
   { label: "FAQ", href: "/faq" },
-  { label: "Twitter", href: "/twitter" },
+  // { label: "Twitter", href: "/twitter" },
 ];
 
 export default function NavMenu() {
