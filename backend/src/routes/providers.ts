@@ -1,5 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import { Prisma } from "@prisma/client";
 import { isAddress } from "ethers";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
