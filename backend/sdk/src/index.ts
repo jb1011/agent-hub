@@ -41,6 +41,8 @@ export type {
   StoredNoDeliveryAttestation,
   SettleWithUserSignatureArgs,
   AcceptanceRequestResult,
+  AcceptanceInput,
+  AcceptanceResult,
   SettleWithUserSignatureInput,
   SettleWithUserSignatureResult,
   RefundAfterQueueTimeoutResult,

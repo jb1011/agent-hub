@@ -11,7 +11,11 @@ import {
 } from "@fastify/type-provider-zod";
 import { providersRoutes } from "./routes/providers.js";
 import { servicesRoutes } from "./routes/services.js";
-import { jobsRoutes, startNoDeliveryAttestationWorker } from "./routes/jobs.js";
+import {
+  jobsRoutes,
+  startNoDeliveryAttestationWorker,
+  startReviewTimeoutSettlementWorker,
+} from "./routes/jobs.js";
 import { startEscrowJobCreatedListener } from "./listeners/escrow-job-created.js";
 
 const app = Fastify({ logger: true });
@@ -64,6 +68,13 @@ const noDeliveryAttestationWorker = startNoDeliveryAttestationWorker(app.log);
 if (noDeliveryAttestationWorker) {
   app.addHook("onClose", async () => {
     await noDeliveryAttestationWorker.close();
+  });
+}
+
+const reviewTimeoutSettlementWorker = startReviewTimeoutSettlementWorker(app.log);
+if (reviewTimeoutSettlementWorker) {
+  app.addHook("onClose", async () => {
+    await reviewTimeoutSettlementWorker.close();
   });
 }
 

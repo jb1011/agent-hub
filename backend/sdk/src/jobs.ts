@@ -12,6 +12,8 @@ import type {
   FinishJobResult,
   OutputCommitmentInput,
   AcceptanceRequestResult,
+  AcceptanceInput,
+  AcceptanceResult,
   SettleWithUserSignatureInput,
   SettleWithUserSignatureResult,
   RefundAfterQueueTimeoutResult,
@@ -77,7 +79,7 @@ export class JobsResource {
   }
 
   /**
-   * Return startJob calldata arguments after the provider signed StartJobAuthorization.
+   * Relay startJob after the provider signed StartJobAuthorization.
    * POST /jobs/:id/start-job
    */
   startJob(id: string, input: StartJobInput): Promise<StartJobResult> {
@@ -119,20 +121,24 @@ export class JobsResource {
   }
 
   /**
-   * Return settleWithUserSignature calldata arguments.
-   * POST /jobs/:id/settle-with-user-signature
+   * Submit user acceptance and relay settleWithUserSignature.
+   * POST /jobs/:id/acceptance
+   */
+  acceptance(id: string, input: AcceptanceInput): Promise<AcceptanceResult> {
+    return this.request<AcceptanceResult>(this.path(id, "/acceptance"), {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  /**
+   * @deprecated Use acceptance(). This method calls POST /jobs/:id/acceptance.
    */
   settleWithUserSignature(
     id: string,
     input: SettleWithUserSignatureInput
   ): Promise<SettleWithUserSignatureResult> {
-    return this.request<SettleWithUserSignatureResult>(
-      this.path(id, "/settle-with-user-signature"),
-      {
-        method: "POST",
-        body: JSON.stringify(input),
-      }
-    );
+    return this.acceptance(id, input);
   }
 
   /**

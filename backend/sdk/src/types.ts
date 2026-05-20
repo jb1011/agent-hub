@@ -159,7 +159,7 @@ export interface CreateJobArgs {
   delivery_attester_signature: string;
 }
 
-export interface CreateJobResult extends Job {
+export interface CreateJobResult {
   create_job_args: CreateJobArgs;
 }
 
@@ -209,9 +209,11 @@ export interface StartJobInput extends AuthorizationExpiryInput {
 }
 
 export interface StartJobResult {
-  start_job_args: StartJobArgs & {
-    provider_signature: string;
-  };
+  input_uri: string | null;
+  transaction_hash: string;
+  relayer_address: string;
+  block_number: number | null;
+  gas_used: string | null;
 }
 
 export interface OutputCommitmentInput extends AuthorizationExpiryInput {
@@ -278,15 +280,35 @@ export interface AcceptanceRequestResult extends TypedDataResponse {
   settle_with_user_signature_args: SettleWithUserSignatureArgs;
 }
 
-export interface SettleWithUserSignatureInput extends OutputCommitmentInput {
+export interface AcceptanceInput extends OutputCommitmentInput {
+  expires_at: number;
   user_signature: string;
 }
 
-export interface SettleWithUserSignatureResult extends Job {
+export interface AcceptanceResult extends Job {
   settle_with_user_signature_args: SettleWithUserSignatureArgs & {
     user_signature: string;
   };
+  transaction_hash: string;
+  relayer_address: string;
+  block_number: number | null;
+  gas_used: string | null;
+  provider_payout_wallet: string | null;
+  provider_amount: string | null;
+  protocol_fee: string | null;
 }
+
+/**
+ * @deprecated Use AcceptanceInput. The API now relays settlement through
+ * POST /jobs/:id/acceptance.
+ */
+export type SettleWithUserSignatureInput = AcceptanceInput;
+
+/**
+ * @deprecated Use AcceptanceResult. The API now relays settlement through
+ * POST /jobs/:id/acceptance.
+ */
+export type SettleWithUserSignatureResult = AcceptanceResult;
 
 export interface RefundAfterQueueTimeoutResult extends Job {
   refund_after_queue_timeout_args: {

@@ -39,9 +39,15 @@ The SDK mirrors the REST API resources:
 | -------- | ------- |
 | `client.providers` | `list`, `get`, `create`, `update`, `delete` |
 | `client.services` | `list`, `get`, `create`, `update`, `delete` |
-| `client.jobs` | `list`, `get`, `create`, `requestStartAuthorization`, `startJob`, `finishJob`, `requestAcceptance`, `settleWithUserSignature`, `refundAfterQueueTimeout`, `refundAfterFinalTimeout` |
+| `client.jobs` | `list`, `get`, `create`, `requestStartAuthorization`, `startJob`, `finishJob`, `requestAcceptance`, `acceptance`, `refundAfterQueueTimeout`, `refundAfterFinalTimeout` |
+
+`client.jobs.create(input)` returns only `create_job_args`; fetch the job with `client.jobs.get(request_id)` after the on-chain creation/funding flow if you need persisted job state.
+
+`client.jobs.startJob(id, input)` maps to `POST /jobs/:id/start-job` and relays `AgentHubEscrow.startJob`. It returns relay metadata (`transaction_hash`, `relayer_address`, `block_number`, `gas_used`) plus the original `input_uri`.
 
 `client.jobs.finishJob(id, input)` maps to `POST /jobs/:id/job-finish`. The API no longer exposes direct DeliveryAttestation or NoDeliveryAttestation endpoints: `finishJob` returns the DeliveryAttestation when provider output is valid, and NoDeliveryAttestations are emitted automatically by the backend after `work_deadline`.
+
+`client.jobs.acceptance(id, input)` maps to `POST /jobs/:id/acceptance` and relays `settleWithUserSignature`. It returns the updated job plus relay metadata and payout amounts. `client.jobs.settleWithUserSignature(id, input)` is kept as a deprecated compatibility alias and calls the same endpoint.
 
 ---
 

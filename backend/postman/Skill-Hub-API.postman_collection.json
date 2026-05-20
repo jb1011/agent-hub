@@ -195,7 +195,7 @@
               "raw": "{\n  \"provider_signature\": \"{{providerSignature}}\",\n  \"expires_at\": {{signatureExpiresAt}}\n}"
             },
             "url": "{{baseUrl}}/jobs/{{jobId}}/start-job",
-            "description": "Returns the arguments for `startJob(jobId, expiresAt, providerSignature)`. `provider_signature` must come from signing the Start authorization request payload."
+            "description": "Relays `startJob(jobId, expiresAt, providerSignature)` and returns the job `input_uri` plus transaction metadata. `provider_signature` must come from signing the Start authorization request payload."
           }
         },
         {
@@ -225,16 +225,16 @@
           }
         },
         {
-          "name": "Settle with user signature args",
+          "name": "Acceptance",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"output_commitment\": \"{{outputCommitment}}\",\n  \"user_signature\": \"{{userSignature}}\",\n  \"expires_at\": {{signatureExpiresAt}}\n}"
+              "raw": "{\n  \"expires_at\": {{signatureExpiresAt}},\n  \"user_signature\": \"{{userSignature}}\"\n}"
             },
-            "url": "{{baseUrl}}/jobs/{{jobId}}/settle-with-user-signature",
-            "description": "Returns the arguments for `settleWithUserSignature`. `expires_at` must match the value signed by the user."
+            "url": "{{baseUrl}}/jobs/{{jobId}}/acceptance",
+            "description": "Submits the user's acceptance signature and relays `settleWithUserSignature`. The backend uses the stored output commitment from `job-finish`; `output_commitment` can be added if an explicit override is needed."
           }
         },
         {

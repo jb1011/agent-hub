@@ -14,6 +14,11 @@ import {
   signCreateJobAuthorization,
   signNoDeliveryAttestation,
 } from "../lib/create-job-authorization.js";
+import {
+  relaySettleAfterReviewTimeout,
+  relaySettleWithUserSignature,
+  relayStartJob,
+} from "../lib/escrow-relayer.js";
 import { uint256StringSchema } from "../lib/uint256.js";
 
 const JOB_STATUS = [
@@ -26,6 +31,11 @@ const CAPACITY_JOB_STATUSES: JobStatus[] = [
   JobStatus.SUBMITTED,
   JobStatus.ACCEPTED,
   JobStatus.DISPUTED,
+];
+
+const REVIEW_TIMEOUT_SETTLEMENT_JOB_STATUSES: JobStatus[] = [
+  JobStatus.SUBMITTED,
+  JobStatus.ACCEPTED,
 ];
 
 const createSchema = z.object({
@@ -62,7 +72,8 @@ const deliveryAttestationSchema = outputCommitmentSchema.extend({
   output: z.unknown().optional(),
 });
 
-const userSignatureSchema = outputCommitmentSchema.extend({
+const acceptanceSchema = outputCommitmentSchema.extend({
+  expires_at: z.number().int().positive(),
   user_signature: z.string().min(1),
 });
 
@@ -113,6 +124,10 @@ function dateFromUnixSeconds(seconds: number): Date {
 
 function unixSeconds(date: Date): number {
   return Math.floor(date.getTime() / 1000);
+}
+
+function dateFromOptionalUnixSeconds(seconds: number | null): Date | undefined {
+  return seconds == null ? undefined : dateFromUnixSeconds(seconds);
 }
 
 function secondsFromEnv(name: string, fallback: number): number {
@@ -231,6 +246,158 @@ function buildNoDeliveryAttestationRecord(attestation: Awaited<ReturnType<typeof
   };
 }
 
+type SettleAfterReviewTimeoutArgs = {
+  job_id: string;
+  output_commitment: string;
+  delivered_at: number;
+  expires_at: number;
+  delivery_attester_signature: string;
+};
+
+function stringField(record: Record<string, unknown>, fieldName: string): string | null {
+  const value = record[fieldName];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function positiveIntegerField(record: Record<string, unknown>, fieldName: string): number | null {
+  const value = record[fieldName];
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function parseSettleAfterReviewTimeoutArgs(value: unknown): SettleAfterReviewTimeoutArgs | null {
+  if (!isRecord(value)) return null;
+  const maybeArgs = isRecord(value.settle_after_review_timeout_args)
+    ? value.settle_after_review_timeout_args
+    : value;
+
+  const jobId = stringField(maybeArgs, "job_id");
+  const outputCommitment = stringField(maybeArgs, "output_commitment");
+  const deliveredAt = positiveIntegerField(maybeArgs, "delivered_at");
+  const expiresAt = positiveIntegerField(maybeArgs, "expires_at");
+  const deliveryAttesterSignature = stringField(maybeArgs, "delivery_attester_signature");
+
+  if (!jobId || !outputCommitment || !deliveredAt || !expiresAt || !deliveryAttesterSignature) {
+    return null;
+  }
+
+  return {
+    job_id: jobId,
+    output_commitment: outputCommitment,
+    delivered_at: deliveredAt,
+    expires_at: expiresAt,
+    delivery_attester_signature: deliveryAttesterSignature,
+  };
+}
+
+async function settleAfterReviewTimeoutArgsForJob(
+  job: NonNullable<Awaited<ReturnType<typeof getJobWithService>>>,
+  logger?: FastifyBaseLogger
+): Promise<SettleAfterReviewTimeoutArgs | null> {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const minTtlSeconds = secondsFromEnv("REVIEW_TIMEOUT_SETTLEMENT_AUTH_MIN_TTL_SECONDS", 120);
+  const storedArgs = parseSettleAfterReviewTimeoutArgs(job.delivery_attestation);
+  if (storedArgs && storedArgs.expires_at > nowSeconds + minTtlSeconds) {
+    return storedArgs;
+  }
+
+  if (!job.output_hash) {
+    throw new CreateJobAuthorizationError("output_commitment_missing_for_review_timeout_settlement", 409);
+  }
+  if (!job.delivered_at) {
+    throw new CreateJobAuthorizationError("delivered_at_missing_for_review_timeout_settlement", 409);
+  }
+
+  const attestation = await signDeliveryAttestation({
+    ...ensureOnchainJob(job),
+    outputCommitment: job.output_hash,
+    deliveredAt: unixSeconds(job.delivered_at),
+    expiresInSeconds: secondsFromEnv("REVIEW_TIMEOUT_SETTLEMENT_AUTH_EXPIRES_IN_SECONDS", 3600),
+  });
+  const attestationRecord = buildDeliveryAttestationRecord(attestation);
+  const updated = await prisma.job.updateMany({
+    where: {
+      request_id: job.request_id,
+      status: { in: REVIEW_TIMEOUT_SETTLEMENT_JOB_STATUSES },
+      settled_at: null,
+      review_deadline: { lt: new Date() },
+    },
+    data: {
+      delivery_attestation: attestationRecord as Prisma.InputJsonValue,
+    },
+  });
+
+  if (updated.count === 0) return null;
+
+  logger?.info(
+    { requestId: job.request_id, jobId: job.job_id },
+    "Refreshed DeliveryAttestation for review timeout settlement"
+  );
+
+  return attestation.settle_after_review_timeout_args;
+}
+
+async function settleJobAfterReviewTimeout(
+  job: NonNullable<Awaited<ReturnType<typeof getJobWithService>>>,
+  logger?: FastifyBaseLogger
+) {
+  if (!job.review_deadline || job.review_deadline.getTime() >= Date.now()) return null;
+  if (!isStatus(job.status, REVIEW_TIMEOUT_SETTLEMENT_JOB_STATUSES)) return null;
+
+  const settleArgs = await settleAfterReviewTimeoutArgsForJob(job, logger);
+  if (!settleArgs) return null;
+
+  const relayed = await relaySettleAfterReviewTimeout({
+    jobId: settleArgs.job_id,
+    outputCommitment: settleArgs.output_commitment,
+    deliveredAt: settleArgs.delivered_at,
+    expiresAt: settleArgs.expires_at,
+    deliveryAttesterSignature: settleArgs.delivery_attester_signature,
+  });
+
+  const settledAt = relayed.settled_at != null ? dateFromUnixSeconds(relayed.settled_at) : new Date();
+  const deliveredAt = dateFromUnixSeconds(relayed.delivered_at ?? settleArgs.delivered_at);
+  const updated = await prisma.job.updateMany({
+    where: {
+      request_id: job.request_id,
+      status: { in: REVIEW_TIMEOUT_SETTLEMENT_JOB_STATUSES },
+      settled_at: null,
+    },
+    data: {
+      status: JobStatus.SETTLED,
+      output_hash: settleArgs.output_commitment,
+      delivered_at: deliveredAt,
+      submitted_at: job.submitted_at ?? deliveredAt,
+      settled_at: settledAt,
+    },
+  });
+
+  await prisma.escrow.updateMany({
+    where: { request_id: job.request_id, escrow_status: { in: ["LOCKED", "DISPUTED"] } },
+    data: {
+      escrow_status: "RELEASED",
+      release_tx_hash: relayed.transaction_hash,
+    },
+  });
+
+  if (updated.count === 0) {
+    logger?.warn(
+      { requestId: job.request_id, jobId: job.job_id, transactionHash: relayed.transaction_hash },
+      "Review timeout settlement relayed but local job was already updated"
+    );
+  }
+
+  return {
+    settle_after_review_timeout_args: settleArgs,
+    transaction_hash: relayed.transaction_hash,
+    relayer_address: relayed.relayer_address,
+    block_number: relayed.block_number,
+    gas_used: relayed.gas_used,
+    provider_payout_wallet: relayed.provider_payout_wallet,
+    provider_amount: relayed.provider_amount,
+    protocol_fee: relayed.protocol_fee,
+  };
+}
+
 async function issueNoDeliveryAttestation(
   job: NonNullable<Awaited<ReturnType<typeof getJobWithService>>>,
   checkedAt = Math.floor(Date.now() / 1000)
@@ -327,6 +494,91 @@ export function startNoDeliveryAttestationWorker(logger: FastifyBaseLogger) {
   };
 }
 
+export async function settleExpiredReviewTimeouts(logger?: FastifyBaseLogger) {
+  const expiredJobs = await prisma.job.findMany({
+    where: {
+      status: { in: REVIEW_TIMEOUT_SETTLEMENT_JOB_STATUSES },
+      settled_at: null,
+      review_deadline: { lt: new Date() },
+    },
+    include: { service: true },
+    orderBy: { review_deadline: "asc" },
+    take: secondsFromEnv("REVIEW_TIMEOUT_SETTLEMENT_WORKER_BATCH_SIZE", 25),
+  });
+
+  let settled = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (const job of expiredJobs) {
+    try {
+      const result = await settleJobAfterReviewTimeout(job, logger);
+      if (result) {
+        settled += 1;
+        logger?.info(
+          {
+            requestId: job.request_id,
+            jobId: job.job_id,
+            transactionHash: result.transaction_hash,
+          },
+          "Review timeout settlement relayed"
+        );
+      } else {
+        skipped += 1;
+      }
+    } catch (err) {
+      failed += 1;
+      logger?.error(
+        { err, requestId: job.request_id, jobId: job.job_id },
+        "Failed to settle job after review timeout"
+      );
+    }
+  }
+
+  if (settled > 0 || failed > 0) {
+    logger?.info({ scanned: expiredJobs.length, settled, skipped, failed }, "Review timeout settlement scan finished");
+  }
+
+  return { scanned: expiredJobs.length, settled, skipped, failed };
+}
+
+export function startReviewTimeoutSettlementWorker(logger: FastifyBaseLogger) {
+  if (process.env.REVIEW_TIMEOUT_SETTLEMENT_WORKER_ENABLED === "false") {
+    logger.info("Review timeout settlement worker disabled by REVIEW_TIMEOUT_SETTLEMENT_WORKER_ENABLED=false");
+    return null;
+  }
+
+  const intervalMs = secondsFromEnv("REVIEW_TIMEOUT_SETTLEMENT_WORKER_INTERVAL_SECONDS", 60) * 1000;
+  let running = false;
+  const run = () => {
+    if (running) {
+      logger.warn("Review timeout settlement worker skipped overlapping run");
+      return;
+    }
+
+    running = true;
+    void settleExpiredReviewTimeouts(logger)
+      .catch((err) => {
+        logger.error({ err }, "Review timeout settlement worker failed");
+      })
+      .finally(() => {
+        running = false;
+      });
+  };
+
+  const timer = setInterval(run, intervalMs);
+  timer.unref();
+  run();
+
+  logger.info({ intervalMs }, "Review timeout settlement worker started");
+
+  return {
+    close: async () => {
+      clearInterval(timer);
+      logger.info("Review timeout settlement worker stopped");
+    },
+  };
+}
+
 export async function jobsRoutes(app: FastifyInstance) {
   app.get("/jobs", {
     schema: {
@@ -394,7 +646,7 @@ export async function jobsRoutes(app: FastifyInstance) {
       summary: "Create a job and generate on-chain creation arguments",
       body: createSchema,
       response: {
-        201: jobResponseSchema.extend({
+        201: z.object({
           create_job_args: z.object({
             service_id: z.string(),
             request_id: z.string(),
@@ -441,7 +693,7 @@ export async function jobsRoutes(app: FastifyInstance) {
         expiresInSeconds: parsed.data.authorization_expires_in_seconds,
       });
 
-      const job = await prisma.job.create({
+      await prisma.job.create({
         data: {
           request_id: authorization.request_id,
           user_wallet: authorization.user_wallet,
@@ -458,7 +710,6 @@ export async function jobsRoutes(app: FastifyInstance) {
       });
 
       return reply.status(201).send({
-        ...serializeJob(job),
         create_job_args: {
           service_id: authorization.service_id,
           request_id: authorization.request_id,
@@ -521,16 +772,16 @@ export async function jobsRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>("/jobs/:id/start-job", {
     schema: {
       tags: ["Jobs"],
-      summary: "Return startJob calldata arguments after provider signed StartJobAuthorization",
+      summary: "Relay AgentHubEscrow.startJob after provider signed StartJobAuthorization",
       params: idParamsSchema,
       body: providerSignatureSchema,
       response: {
         200: z.object({
-          start_job_args: z.object({
-            job_id: z.string(),
-            expires_at: z.number(),
-            provider_signature: z.string(),
-          }),
+          input_uri: z.string().nullable(),
+          transaction_hash: z.string(),
+          relayer_address: z.string(),
+          block_number: z.number().nullable(),
+          gas_used: z.string().nullable(),
         }),
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
         404: z.object({ error: z.string() }),
@@ -552,11 +803,33 @@ export async function jobsRoutes(app: FastifyInstance) {
         expiresAt: parsed.data.expires_at,
         expiresInSeconds: parsed.data.expires_in_seconds,
       });
+      const relayed = await relayStartJob({
+        jobId: authorization.start_job_args.job_id,
+        expiresAt: authorization.start_job_args.expires_at,
+        providerSignature: parsed.data.provider_signature,
+      });
+
+      if (relayed.started_at != null) {
+        await prisma.job.updateMany({
+          where: {
+            request_id: job!.request_id,
+            status: { in: [JobStatus.FUNDED, JobStatus.RUNNING] },
+          },
+          data: {
+            status: JobStatus.RUNNING,
+            started_at: dateFromUnixSeconds(relayed.started_at),
+            work_deadline: dateFromOptionalUnixSeconds(relayed.work_deadline),
+            final_refund_deadline: dateFromOptionalUnixSeconds(relayed.final_refund_deadline),
+          },
+        });
+      }
+
       return reply.send({
-        start_job_args: {
-          ...authorization.start_job_args,
-          provider_signature: parsed.data.provider_signature,
-        },
+        input_uri: job!.input_uri,
+        transaction_hash: relayed.transaction_hash,
+        relayer_address: relayed.relayer_address,
+        block_number: relayed.block_number,
+        gas_used: relayed.gas_used,
       });
     } catch (err) {
       if (err instanceof CreateJobAuthorizationError) {
@@ -717,12 +990,12 @@ export async function jobsRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post<{ Params: { id: string } }>("/jobs/:id/settle-with-user-signature", {
+  app.post<{ Params: { id: string } }>("/jobs/:id/acceptance", {
     schema: {
       tags: ["Jobs"],
-      summary: "Return settleWithUserSignature calldata arguments",
+      summary: "Accept a submitted job and relay settleWithUserSignature",
       params: idParamsSchema,
-      body: userSignatureSchema,
+      body: acceptanceSchema,
       response: {
         200: jobResponseSchema.extend({
           settle_with_user_signature_args: z.object({
@@ -731,6 +1004,13 @@ export async function jobsRoutes(app: FastifyInstance) {
             expires_at: z.number(),
             user_signature: z.string(),
           }),
+          transaction_hash: z.string(),
+          relayer_address: z.string(),
+          block_number: z.number().nullable(),
+          gas_used: z.string().nullable(),
+          provider_payout_wallet: z.string().nullable(),
+          provider_amount: z.string().nullable(),
+          protocol_fee: z.string().nullable(),
         }),
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
         404: z.object({ error: z.string() }),
@@ -739,8 +1019,9 @@ export async function jobsRoutes(app: FastifyInstance) {
       },
     },
   }, async (req, reply) => {
-    const parsed = userSignatureSchema.safeParse(req.body);
+    const parsed = acceptanceSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
+
     const job = await getJobWithService(req.params.id);
     if (!job) return notFound(reply);
     if (!isStatus(job.status, [JobStatus.SUBMITTED, JobStatus.ACCEPTED])) {
@@ -757,23 +1038,47 @@ export async function jobsRoutes(app: FastifyInstance) {
         ...ensureOnchainJob(job),
         outputCommitment,
         expiresAt: parsed.data.expires_at,
-        expiresInSeconds: parsed.data.expires_in_seconds,
       });
+      const settleArgs = {
+        ...acceptance.settle_with_user_signature_args,
+        user_signature: parsed.data.user_signature,
+      };
+      const relayed = await relaySettleWithUserSignature({
+        jobId: settleArgs.job_id,
+        outputCommitment: settleArgs.output_commitment,
+        expiresAt: settleArgs.expires_at,
+        userSignature: settleArgs.user_signature,
+      });
+
+      const settledAt = relayed.settled_at != null ? dateFromUnixSeconds(relayed.settled_at) : new Date();
       const updated = await prisma.job.update({
         where: { request_id: job.request_id },
         data: {
-          status: JobStatus.ACCEPTED,
+          status: JobStatus.SETTLED,
           output_uri: parsed.data.output_uri ?? job.output_uri,
           output_hash: outputCommitment,
-          accepted_at: new Date(),
+          accepted_at: job.accepted_at ?? settledAt,
+          settled_at: settledAt,
         },
       });
+      await prisma.escrow.updateMany({
+        where: { request_id: job.request_id, escrow_status: { in: ["LOCKED", "DISPUTED"] } },
+        data: {
+          escrow_status: "RELEASED",
+          release_tx_hash: relayed.transaction_hash,
+        },
+      });
+
       return reply.send({
         ...serializeJob(updated),
-        settle_with_user_signature_args: {
-          ...acceptance.settle_with_user_signature_args,
-          user_signature: parsed.data.user_signature,
-        },
+        settle_with_user_signature_args: settleArgs,
+        transaction_hash: relayed.transaction_hash,
+        relayer_address: relayed.relayer_address,
+        block_number: relayed.block_number,
+        gas_used: relayed.gas_used,
+        provider_payout_wallet: relayed.provider_payout_wallet,
+        provider_amount: relayed.provider_amount,
+        protocol_fee: relayed.protocol_fee,
       });
     } catch (err) {
       if (err instanceof CreateJobAuthorizationError) {
