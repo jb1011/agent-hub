@@ -174,6 +174,28 @@ $ npm run register-provider-service -- --provider-file provider.json --service-f
 
 The script hashes each JSON object into `metadataCommitment`, calls `registerProvider`, then uses the emitted provider id to call `registerService`. `price_usdc` is converted to USDC base units with 6 decimals.
 
+### Sign And Send Transaction
+
+Set `RPC_URL` and `signer_pk` in `.env`, then pass a transaction JSON file:
+
+```json
+{
+  "to": "0x...",
+  "data": "0x...",
+  "value": "0",
+  "from": "0x...",
+  "chain_id": 5042002
+}
+```
+
+Run:
+
+```shell
+$ npm run sign-send-tx -- --file args/tx.json
+```
+
+The script checks that `from` matches `signer_pk`, checks that `chain_id` matches the RPC, fills `nonce`, `gasLimit`, and gas fees when missing, signs the transaction locally, sends the signed raw transaction, then waits for the receipt.
+
 ### Cast
 
 ```shell

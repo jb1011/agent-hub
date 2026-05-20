@@ -10,7 +10,8 @@
     "refund-with-no-delivery-attestation": "forge build && ts-node script/refund-with-no-delivery-attestation.ts",
     "settle-with-user-signature": "forge build && ts-node script/settle-with-user-signature.ts",
     "start-job": "forge build && ts-node script/start-job.ts",
-    "register-provider-service": "forge build && ts-node script/register-provider-service.ts"
+    "register-provider-service": "forge build && ts-node script/register-provider-service.ts",
+    "sign-send-tx": "ts-node script/sign-send-tx.ts"
   },
   "dependencies": {
     "dotenv": "16.4.7",

@@ -1,0 +1,12 @@
+{
+  "provider_id": "1",
+  "name": "Agent Hub Demo Provider",
+  "description": "Demo provider for Agent Hub service registration.",
+  "status": "ACTIVE",
+  "owner_wallet": "0x6bD35AdF93BF749e16d9aC4f8420986373Bcb1bb",
+  "payout_wallet": "0x6bD35AdF93BF749e16d9aC4f8420986373Bcb1bb",
+  "api_base_url": "https://demo.example.com",
+  "trust_level": "VERIFIED",
+  "created_at": "2026-05-20T15:07:06.000Z",
+  "updated_at": "2026-05-20T15:07:06.000Z"
+}
