@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { ArrowRight, Zap, ExternalLink } from "lucide-react";
-import { useAccount, useChainId, useSendTransaction } from "wagmi";
+import { useAccount, useSendTransaction } from "wagmi";
 import { arcTestnet } from "viem/chains";
+import { ensureArcTestnet } from "../lib/arc-wallet";
+import { useWalletChainId } from "../lib/useWalletChainId";
 import {
   SkillHubClient,
   type CreateProviderInput,
@@ -19,13 +21,34 @@ const API_BASE_URL =
 
 const sdk = new SkillHubClient({ baseUrl: API_BASE_URL });
 
-type Status = "idle" | "loading" | "success" | "error";
+type Status = "idle" | "switching" | "signing" | "success" | "error";
 
 const inputClass =
   "w-full bg-transparent border border-black/15 px-4 py-3 text-sm placeholder:text-black/30 focus:outline-none focus:border-[#E85A00] transition-colors resize-none";
 
 const inputClassMono =
   "w-full bg-transparent border border-black/15 px-4 py-3 text-sm font-mono placeholder:text-black/30 focus:outline-none focus:border-[#E85A00] transition-colors";
+
+function formatSubmitError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : "Something went wrong";
+  if (
+    raw.includes("provider_id_already_exists") ||
+    raw.includes("P2002") ||
+    (raw.includes("Unique constraint failed") && raw.includes("provider_id"))
+  ) {
+    return "This Provider ID is already registered. Pick a new numeric ID, or delete the existing row in the database before retrying.";
+  }
+  if (
+    raw.includes("does not match the target chain") ||
+    raw.includes("Expected Chain ID: 5042002")
+  ) {
+    return "MetaMask is on the wrong network. Click Register again and approve the Arc Testnet switch in MetaMask, or switch manually in the extension.";
+  }
+  if ((err as { code?: number })?.code === 4001) {
+    return "You rejected the MetaMask prompt. Approve the network switch or transaction to continue.";
+  }
+  return raw;
+}
 
 function isPreparedTransaction(
   value: unknown,
@@ -41,8 +64,8 @@ function isPreparedTransaction(
 
 export default function RegisterPage() {
   const { address, isConnected } = useAccount();
-  const chainId = useChainId();
-  const onArc = chainId === arcTestnet.id;
+  const walletChainId = useWalletChainId();
+  const onArc = walletChainId === arcTestnet.id;
 
   const { sendTransactionAsync } = useSendTransaction();
 
@@ -74,13 +97,13 @@ export default function RegisterPage() {
     form.api_base_url.trim() !== "" &&
     (form.samePayoutWallet || form.payout_wallet.trim() !== "");
 
-  const canSubmit = requiredFilled && isConnected && onArc && !!address;
+  const isSubmitting = status === "switching" || status === "signing";
+  const canSubmit = requiredFilled && isConnected && !!address && !isSubmitting;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit || !address) return;
 
-    setStatus("loading");
     setErrorMsg("");
     setTxHash(null);
 
@@ -98,6 +121,7 @@ export default function RegisterPage() {
         api_base_url: form.api_base_url.trim(),
       };
 
+      setStatus("signing");
       const response = (await sdk.providers.create(payload)) as
         | PreparedContractTransaction
         | Record<string, unknown>;
@@ -120,6 +144,12 @@ export default function RegisterPage() {
         );
       }
 
+      // Always talk to MetaMask directly — wagmi's chain id can lie when only
+      // Arc is configured but the wallet is still on Ethereum mainnet.
+      setStatus("switching");
+      await ensureArcTestnet();
+
+      setStatus("signing");
       const hash = await sendTransactionAsync({
         to: response.to as `0x${string}`,
         data: response.data as `0x${string}`,
@@ -130,9 +160,7 @@ export default function RegisterPage() {
       setTxHash(hash);
       setStatus("success");
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Something went wrong";
-      setErrorMsg(message);
+      setErrorMsg(formatSubmitError(err));
       setStatus("error");
     }
   }
@@ -274,10 +302,11 @@ export default function RegisterPage() {
                     the registration transaction.
                   </p>
                 )}
-                {isConnected && !onArc && (
+                {isConnected && walletChainId !== null && !onArc && (
                   <p className="text-[11px] text-[#E85A00] font-medium mt-3">
-                    Wrong network. Switch to Arc Testnet (chain id{" "}
-                    {arcTestnet.id}) to continue.
+                    MetaMask is on chain {walletChainId} (not Arc Testnet). Use
+                    &quot;Switch to Arc Testnet&quot; above, or submit the form
+                    — MetaMask will prompt you to switch.
                   </p>
                 )}
               </div>
@@ -406,22 +435,25 @@ export default function RegisterPage() {
               <div className="flex items-center gap-4">
                 <button
                   type="submit"
-                  disabled={!canSubmit || status === "loading"}
+                  disabled={!canSubmit}
                   className="btn-cyber disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {status === "loading"
-                    ? "Awaiting Signature…"
-                    : "Register Provider"}
-                  {status !== "loading" && <ArrowRight size={13} />}
+                  {status === "switching"
+                    ? "Switching Network…"
+                    : status === "signing"
+                      ? "Awaiting Signature…"
+                      : "Register Provider"}
+                  {!isSubmitting && <ArrowRight size={13} />}
                 </button>
                 {!isConnected && (
                   <span className="text-[11px] text-black/40">
                     Connect a wallet to enable submission.
                   </span>
                 )}
-                {isConnected && !onArc && (
+                {isConnected && walletChainId !== null && !onArc && !isSubmitting && (
                   <span className="text-[11px] text-black/40">
-                    Switch to Arc Testnet to enable submission.
+                    Submit will open MetaMask to add/switch to Arc Testnet, then
+                    sign the transaction.
                   </span>
                 )}
               </div>

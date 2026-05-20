@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { Prisma } from "@prisma/client";
 import { isAddress } from "ethers";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
@@ -108,14 +109,25 @@ export async function providersRoutes(app: FastifyInstance) {
       response: {
         201: preparedTransactionResponseSchema,
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        409: z.object({ error: z.string() }),
       },
     },
   }, async (req, reply) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     agentHubRegistryAddress();
-    const provider = await prisma.provider.create({ data: parsed.data });
-    return reply.status(201).send(buildRegisterProviderCall(serializeProvider(provider)).transaction);
+    try {
+      const provider = await prisma.provider.create({ data: parsed.data });
+      return reply.status(201).send(buildRegisterProviderCall(serializeProvider(provider)).transaction);
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        return reply.status(409).send({ error: "provider_id_already_exists" });
+      }
+      throw err;
+    }
   });
 
   app.patch<{ Params: { id: string } }>("/providers/:id", {

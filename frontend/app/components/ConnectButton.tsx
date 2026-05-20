@@ -1,8 +1,11 @@
 "use client";
 
-import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import { useState } from "react";
+import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { arcTestnet } from "viem/chains";
 import { Wallet, Check, AlertTriangle, LogOut } from "lucide-react";
+import { ensureArcTestnet } from "../lib/arc-wallet";
+import { useWalletChainId } from "../lib/useWalletChainId";
 
 function shortenAddress(addr: string) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -12,14 +15,23 @@ export function ConnectButton() {
   const { address, isConnected } = useAccount();
   const { connectors, connect, isPending, error: connectError } = useConnect();
   const { disconnect } = useDisconnect();
-  const chainId = useChainId();
-  const {
-    switchChain,
-    isPending: isSwitching,
-    error: switchError,
-  } = useSwitchChain();
+  const walletChainId = useWalletChainId();
+  const [isSwitching, setIsSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
 
-  const onArc = chainId === arcTestnet.id;
+  const onArc = walletChainId === arcTestnet.id;
+
+  async function handleSwitchToArc() {
+    setSwitchError(null);
+    setIsSwitching(true);
+    try {
+      await ensureArcTestnet();
+    } catch (err) {
+      setSwitchError(err instanceof Error ? err.message : "Failed to switch network");
+    } finally {
+      setIsSwitching(false);
+    }
+  }
 
   const metaMask =
     connectors.find((c) => c.id === "metaMask") ??
@@ -64,7 +76,11 @@ export function ConnectButton() {
           {address ? shortenAddress(address) : "—"}
         </div>
 
-        {onArc ? (
+        {walletChainId === null ? (
+          <span className="text-[10px] uppercase tracking-widest text-black/40">
+            Reading network…
+          </span>
+        ) : onArc ? (
           <span
             className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-1"
             style={{ background: "#0C0C0C", color: "#fff" }}
@@ -75,7 +91,7 @@ export function ConnectButton() {
         ) : (
           <button
             type="button"
-            onClick={() => switchChain({ chainId: arcTestnet.id })}
+            onClick={() => void handleSwitchToArc()}
             disabled={isSwitching}
             className="btn-cyber disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -95,7 +111,7 @@ export function ConnectButton() {
       </div>
       {switchError && (
         <span className="text-[11px] text-red-600 font-medium">
-          {switchError.message}
+          {switchError}
         </span>
       )}
     </div>

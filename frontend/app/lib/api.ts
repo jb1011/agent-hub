@@ -1,7 +1,14 @@
 export type Provider = {
   provider_id: string;
   name: string;
+  description: string | null;
+  owner_wallet: string;
+  payout_wallet: string;
+  api_base_url: string;
   trust_level: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Service = {
