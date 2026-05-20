@@ -1,50 +1,33 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
+import Script from "next/script";
 import { ArrowRight, X, Zap, Loader2 } from "lucide-react";
 import NavMenu from "../components/NavMenu";
 
 const GRID = "rgba(0,0,0,0.12)";
 const SCREEN_NAME = "agent_hub1";
-const TIMEOUT_MS = 10000;
+const TIMEOUT_MS = 12000;
+
+type Twttr = {
+  widgets?: { load: (el?: HTMLElement | null) => void };
+};
 
 export default function TwitterPage() {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const feedRef = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
 
-  const buildTimeline = useCallback(() => {
-    const container = containerRef.current;
-    if (!container) return;
+  const triggerLoad = () => {
+    (window as Window & { twttr?: Twttr }).twttr?.widgets?.load(
+      feedRef.current,
+    );
+  };
 
-    // Clear previous attempts
-    container.innerHTML = "";
-
-    // Insert the anchor tag that widgets.js looks for
-    const anchor = document.createElement("a");
-    anchor.className = "twitter-timeline";
-    anchor.href = `https://twitter.com/${SCREEN_NAME}`;
-    anchor.setAttribute("data-height", "600");
-    anchor.setAttribute("data-theme", "light");
-    anchor.setAttribute("data-chrome", "noheader nofooter noborders noscrollbar");
-    anchor.setAttribute("data-dnt", "true");
-    anchor.setAttribute("data-lang", "en");
-    anchor.textContent = `Tweets by @${SCREEN_NAME}`;
-    container.appendChild(anchor);
-
-    // Use widgets.load() — simpler and more reliable than createTimeline()
-    const w = window as Window & {
-      twttr?: { widgets?: { load: (el: HTMLElement) => void } };
-    };
-    w.twttr?.widgets?.load(container);
-  }, []);
-
-  // MutationObserver: watch for Twitter injecting the <iframe> into the container
-  // This is the only reliable way to know the widget actually rendered
+  // Watch for Twitter injecting the <iframe>
   useEffect(() => {
-    const container = containerRef.current;
+    const container = feedRef.current;
     if (!container) return;
-
     const observer = new MutationObserver(() => {
       if (container.querySelector("iframe")) {
         setLoaded(true);
@@ -55,37 +38,12 @@ export default function TwitterPage() {
     return () => observer.disconnect();
   }, []);
 
-  // Timeout escape hatch
+  // Timeout fallback
   useEffect(() => {
     if (loaded) return;
     const t = setTimeout(() => setError(true), TIMEOUT_MS);
     return () => clearTimeout(t);
   }, [loaded]);
-
-  // Load widgets.js via vanilla <script> — more reliable than Next.js Script
-  // component which can have timing/hydration issues
-  useEffect(() => {
-    const SCRIPT_SRC = "https://platform.twitter.com/widgets.js";
-
-    const existing = document.querySelector<HTMLScriptElement>(
-      `script[src="${SCRIPT_SRC}"]`
-    );
-
-    if (existing) {
-      // Already loaded — just process the anchor tag we injected
-      buildTimeline();
-      return;
-    }
-
-    buildTimeline(); // Insert the anchor first so widgets.js finds it on load
-
-    const script = document.createElement("script");
-    script.src = SCRIPT_SRC;
-    script.async = true;
-    script.charset = "utf-8";
-    script.onerror = () => setError(true);
-    document.body.appendChild(script);
-  }, [buildTimeline]);
 
   return (
     <div
@@ -98,7 +56,6 @@ export default function TwitterPage() {
       }}
     >
       <NavMenu />
-
       {/* Top label bar */}
       <div
         className="flex items-center gap-3 px-6 md:px-10 py-4"
@@ -122,7 +79,6 @@ export default function TwitterPage() {
           @agent_hub1 on X
         </div>
       </div>
-
       {/* Hero */}
       <section
         className="relative px-6 md:px-10 py-12 md:py-20 flex flex-col md:flex-row items-start gap-10"
@@ -144,18 +100,34 @@ export default function TwitterPage() {
           </h1>
           <p className="text-base md:text-lg text-black/65 leading-relaxed max-w-xl">
             The latest from{" "}
-            <span className="font-semibold text-black">@agent_hub1</span> on X
-            — updates, integrations, and community highlights.
+            <span className="font-semibold text-black">@agent_hub1</span> on X —
+            updates, integrations, and community highlights.
           </p>
         </div>
 
         {/* Stat cards */}
         <div className="md:flex-1 grid grid-cols-2 gap-4 w-full md:w-auto">
           {[
-            { num: "01", label: "Live feed", desc: "Directly embedded from X, always up to date." },
-            { num: "02", label: "No API key", desc: "Powered by the free Twitter widget — zero setup." },
-            { num: "03", label: "Community", desc: "Share your experience, tag us on X." },
-            { num: "04", label: "Open source", desc: "AgentHub is built in public — follow along." },
+            {
+              num: "01",
+              label: "Live feed",
+              desc: "Directly embedded from X, always up to date.",
+            },
+            {
+              num: "02",
+              label: "No API key",
+              desc: "Powered by the free Twitter widget — zero setup.",
+            },
+            {
+              num: "03",
+              label: "Community",
+              desc: "Share your experience, tag us on X.",
+            },
+            {
+              num: "04",
+              label: "Open source",
+              desc: "AgentHub is built in public — follow along.",
+            },
           ].map((card) => (
             <div
               key={card.num}
@@ -178,8 +150,8 @@ export default function TwitterPage() {
           ))}
         </div>
       </section>
-
       {/* Feed section */}
+
       <section style={{ borderBottom: `1px solid ${GRID}` }}>
         <div
           className="flex items-center gap-3 px-6 md:px-10 py-4"
@@ -263,7 +235,7 @@ export default function TwitterPage() {
                     onClick={() => {
                       setError(false);
                       setLoaded(false);
-                      setTimeout(buildTimeline, 100);
+                      setTimeout(triggerLoad, 100);
                     }}
                     className="text-xs text-black/30 underline hover:text-black/60 transition-colors"
                   >
@@ -272,13 +244,31 @@ export default function TwitterPage() {
                 </div>
               )}
 
-              {/* Twitter injects the <iframe> here */}
-              <div ref={containerRef} className="w-full" />
+              {/* Twitter widget anchor — widgets.js replaces this with an iframe */}
+              <div ref={feedRef} className="w-full">
+                <a
+                  className="twitter-timeline"
+                  href={`https://twitter.com/${SCREEN_NAME}?ref_src=twsrc%5Etfw`}
+                  data-height="600"
+                  data-theme="light"
+                  data-chrome="noheader nofooter noborders noscrollbar"
+                  data-dnt="true"
+                  data-lang="en"
+                >
+                  Tweets by {SCREEN_NAME}
+                </a>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
+      <Script
+        src="https://platform.twitter.com/widgets.js"
+        strategy="afterInteractive"
+        onLoad={triggerLoad}
+        onError={() => setError(true)}
+      />
       {/* Dark CTA */}
       <section
         className="relative overflow-hidden flex flex-col md:flex-row items-stretch"
@@ -309,8 +299,8 @@ export default function TwitterPage() {
           </h2>
           <p className="text-sm text-white/50 leading-relaxed max-w-md mb-8">
             Built something with AgentHub? Tag{" "}
-            <span className="text-white/80">@agent_hub1</span> and we'll
-            retweet your project to the community.
+            <span className="text-white/80">@agent_hub1</span> and we'll retweet
+            your project to the community.
           </p>
           <div className="flex flex-col sm:flex-row gap-6">
             <a
@@ -351,7 +341,6 @@ export default function TwitterPage() {
           </div>
         </div>
       </section>
-
       {/* Footer */}
       <footer
         className="flex flex-col md:flex-row items-start md:items-center justify-between px-6 md:px-10 py-6 gap-4"
