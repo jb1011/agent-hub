@@ -1,6 +1,6 @@
 {
   "name": "skillhub-sdk",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Official SDK for interacting with the Skill Hub API",
   "type": "module",
   "main": "./dist/index.js",
