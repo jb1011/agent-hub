@@ -1,5 +1,11 @@
 import type { PreparedContractTransaction } from "../../backend/sdk/dist/index.js";
-import { getAddress, JsonRpcProvider, Wallet } from "ethers";
+import {
+  getAddress,
+  JsonRpcProvider,
+  Wallet,
+  type TypedDataDomain,
+  type TypedDataField,
+} from "ethers";
 
 export function env(name: string, fallback?: string): string {
   const value = process.env[name];
@@ -17,26 +23,47 @@ function normalizePrivateKey(privateKey: string): string {
   return privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
 }
 
+export function signerWallet() {
+  return new Wallet(normalizePrivateKey(env("SIGNER_WALLET_PK")));
+}
+
+type SendPreparedTransactionOptions = {
+  expectedSigner?: string;
+};
+
+export type Eip712TypedData = {
+  domain: TypedDataDomain;
+  types: Record<string, TypedDataField[]>;
+  primaryType: string;
+  value: Record<string, unknown>;
+};
+
+export async function signTypedData(label: string, typedData: Eip712TypedData): Promise<string> {
+  const wallet = signerWallet();
+  console.log(`\nSigning ${label} typed data from ${getAddress(wallet.address)}...`);
+  return wallet.signTypedData(typedData.domain, typedData.types, typedData.value);
+}
+
 export async function sendPreparedTransaction(
   label: string,
   transaction: PreparedContractTransaction,
-  expectedSigner?: string
+  options: SendPreparedTransactionOptions = {}
 ) {
-  const providerOwnerPk = optionalEnv("PROVIDER_OWNER_PK");
-  if (!providerOwnerPk) {
-    console.log("\nPROVIDER_OWNER_PK is not set, so the transaction was not sent.");
-    console.log("Set PROVIDER_OWNER_PK and RPC_URL to sign and broadcast it from this script.");
+  const privateKey = optionalEnv("SIGNER_WALLET_PK");
+  if (!privateKey) {
+    console.log("\nSIGNER_WALLET_PK is not set, so the transaction was not sent.");
+    console.log("Set SIGNER_WALLET_PK and RPC_URL to sign and broadcast it from this script.");
     return;
   }
 
   const rpcUrl = env("RPC_URL");
   const rpcProvider = new JsonRpcProvider(rpcUrl);
-  const wallet = new Wallet(normalizePrivateKey(providerOwnerPk), rpcProvider);
+  const wallet = new Wallet(normalizePrivateKey(privateKey), rpcProvider);
   const signerAddress = getAddress(wallet.address);
-  const expectedAddress = expectedSigner ? getAddress(expectedSigner) : undefined;
+  const expectedAddress = options.expectedSigner ? getAddress(options.expectedSigner) : undefined;
 
   if (expectedAddress && signerAddress !== expectedAddress) {
-    throw new Error(`PROVIDER_OWNER_PK signs for ${signerAddress}, but expected signer is ${expectedAddress}`);
+    throw new Error(`SIGNER_WALLET_PK signs for ${signerAddress}, but expected signer is ${expectedAddress}`);
   }
 
   if (transaction.chain_id !== undefined) {

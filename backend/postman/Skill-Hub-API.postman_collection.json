@@ -167,7 +167,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"user_wallet\": \"0x00000000000000000000000000000000000000aa\",\n  \"service_id\": \"{{serviceId}}\",\n  \"input_uri\": \"ipfs://input\",\n  \"input_commitment\": \"{{inputCommitment}}\",\n  \"queue_timeout_seconds\": 3600,\n  \"authorization_expires_in_seconds\": 3600\n}"
+              "raw": "{\n  \"user_wallet\": \"0x00000000000000000000000000000000000000aa\",\n  \"service_id\": \"{{serviceId}}\",\n  \"input\": { \"uri\": \"ipfs://input\" },\n  \"input_commitment\": \"{{inputCommitment}}\",\n  \"queue_timeout_seconds\": 3600,\n  \"authorization_expires_in_seconds\": 3600\n}"
             },
             "url": "{{baseUrl}}/jobs"
           }
@@ -195,7 +195,7 @@
               "raw": "{\n  \"provider_signature\": \"{{providerSignature}}\",\n  \"expires_at\": {{signatureExpiresAt}}\n}"
             },
             "url": "{{baseUrl}}/jobs/{{jobId}}/start-job",
-            "description": "Relays `startJob(jobId, expiresAt, providerSignature)` and returns the job `input_uri` plus transaction metadata. `provider_signature` must come from signing the Start authorization request payload."
+            "description": "Relays `startJob(jobId, expiresAt, providerSignature)` and returns the job `input` plus transaction metadata. `provider_signature` must come from signing the Start authorization request payload."
           }
         },
         {
@@ -205,7 +205,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"output\": { \"result\": \"ok\" },\n  \"output_uri\": \"ipfs://output\",\n  \"output_commitment\": \"{{outputCommitment}}\",\n  \"expires_in_seconds\": 3600\n}"
+              "raw": "{\n  \"output\": { \"result\": \"ok\", \"uri\": \"ipfs://output\" },\n  \"output_commitment\": \"{{outputCommitment}}\",\n  \"expires_in_seconds\": 3600\n}"
             },
             "url": "{{baseUrl}}/jobs/{{jobId}}/job-finish",
             "description": "Called by the provider when the job is finished. The backend performs minimal output schema validation, signs and stores the DeliveryAttestation, then returns the settlement arguments. NoDeliveryAttestations are emitted automatically by the backend after `work_deadline`."

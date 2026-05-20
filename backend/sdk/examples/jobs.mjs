@@ -7,10 +7,10 @@
  * Commands:
  *   list       [status]
  *   get        <request_id|job_id>
- *   create     <user_wallet> <service_id>
+ *   create     <user_wallet> <service_id> [input_json]
  *   start-auth <request_id|job_id> [expires_in_seconds]
  *   start      <request_id|job_id> <provider_signature> [expires_at]
- *   finish     <request_id|job_id> <output_json> [output_uri]
+ *   finish     <request_id|job_id> <output_json>
  *   accept-req <request_id|job_id> <output_commitment> [expires_in_seconds]
  *   accept     <request_id|job_id> <output_commitment> <expires_at> <user_signature>
  *   refund-queue <request_id|job_id>
@@ -20,9 +20,9 @@
  *   node examples/jobs.mjs list
  *   node examples/jobs.mjs list FUNDED
  *   node examples/jobs.mjs get abc-123
- *   node examples/jobs.mjs create 0xUserWallet 10
+ *   node examples/jobs.mjs create 0xUserWallet 10 '{"prompt":"hello"}'
  *   node examples/jobs.mjs start-auth abc-123
- *   node examples/jobs.mjs finish abc-123 '{"result":"ok"}' ipfs://output
+ *   node examples/jobs.mjs finish abc-123 '{"result":"ok"}'
  *   node examples/jobs.mjs accept-req abc-123 0xabc...
  */
 
@@ -39,10 +39,10 @@ Usage: node examples/jobs.mjs <command> [args]
 
   list       [status]
   get        <request_id|job_id>
-  create     <user_wallet> <service_id>
+  create     <user_wallet> <service_id> [input_json]
   start-auth <request_id|job_id> [expires_in_seconds]
   start      <request_id|job_id> <provider_signature> [expires_at]
-  finish     <request_id|job_id> <output_json> [output_uri]
+  finish     <request_id|job_id> <output_json>
   accept-req <request_id|job_id> <output_commitment> [expires_in_seconds]
   accept     <request_id|job_id> <output_commitment> <expires_at> <user_signature>
   refund-queue <request_id|job_id>
@@ -73,9 +73,13 @@ async function run() {
     }
 
     case "create": {
-      const [user_wallet, service_id] = args;
+      const [user_wallet, service_id, input_json] = args;
       if (!user_wallet || !service_id) usage();
-      const result = await client.jobs.create({ user_wallet, service_id });
+      const result = await client.jobs.create({
+        user_wallet,
+        service_id,
+        ...(input_json ? { input: JSON.parse(input_json) } : {}),
+      });
       console.log("\nCreate job transaction:");
       console.log(JSON.stringify(result, null, 2));
       break;
@@ -105,11 +109,10 @@ async function run() {
     }
 
     case "finish": {
-      const [id, output_json, output_uri] = args;
+      const [id, output_json] = args;
       if (!id || !output_json) usage();
       const result = await client.jobs.finishJob(id, {
         output: JSON.parse(output_json),
-        ...(output_uri ? { output_uri } : {}),
       });
       console.log("\nJob finished:");
       console.log(JSON.stringify(result, null, 2));

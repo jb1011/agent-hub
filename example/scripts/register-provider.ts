@@ -16,4 +16,6 @@ const transaction = await client.providers.create(provider);
 console.log("\nPrepared registerProvider transaction:");
 console.log(JSON.stringify(transaction, null, 2));
 
-await sendPreparedTransaction("registerProvider", transaction, provider.owner_wallet);
+await sendPreparedTransaction("registerProvider", transaction, {
+  expectedSigner: provider.owner_wallet,
+});

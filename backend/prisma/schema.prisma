@@ -95,9 +95,9 @@ model Job {
   service_id            String
   service               Service   @relation(fields: [service_id], references: [service_id], onDelete: Restrict)
   status                JobStatus @default(CREATED)
-  input_uri             String?
+  input                 Json?
   input_hash            String?
-  output_uri            String?
+  output                Json?
   output_hash           String?
   created_at            DateTime  @default(now())
   funded_at             DateTime?

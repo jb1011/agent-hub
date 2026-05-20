@@ -55,7 +55,7 @@ type PreparedContractTransaction = {
 
 Pass that object to the caller wallet for signing/sending. Fetch the resource afterward with `get(...)` if you need persisted API state.
 
-`client.jobs.startJob(id, input)` maps to `POST /jobs/:id/start-job` and relays `AgentHubEscrow.startJob`. It returns relay metadata (`transaction_hash`, `relayer_address`, `block_number`, `gas_used`) plus the original `input_uri`.
+`client.jobs.startJob(id, input)` maps to `POST /jobs/:id/start-job` and relays `AgentHubEscrow.startJob`. It returns relay metadata (`transaction_hash`, `relayer_address`, `block_number`, `gas_used`) plus the original `input`.
 
 `client.jobs.finishJob(id, input)` maps to `POST /jobs/:id/job-finish`. The API no longer exposes direct DeliveryAttestation or NoDeliveryAttestation endpoints: `finishJob` returns the DeliveryAttestation when provider output is valid, and NoDeliveryAttestations are emitted automatically by the backend after `work_deadline`.
 

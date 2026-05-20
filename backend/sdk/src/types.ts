@@ -128,9 +128,9 @@ export interface Job {
   user_wallet: string;
   service_id: string;
   status: JobStatus;
-  input_uri: string | null;
+  input: unknown | null;
   input_hash: string | null;
-  output_uri: string | null;
+  output: unknown | null;
   output_hash: string | null;
   error_message: string | null;
   queue_deadline: string | null;
@@ -165,7 +165,7 @@ export interface CreateJobInput {
   request_id?: string;
   user_wallet: string;
   service_id: string;
-  input_uri?: string;
+  input?: unknown;
   input_hash?: string;
   input_commitment?: string;
   queue_timeout_seconds?: number;
@@ -206,7 +206,7 @@ export interface StartJobInput extends AuthorizationExpiryInput {
 }
 
 export interface StartJobResult {
-  input_uri: string | null;
+  input: unknown | null;
   transaction_hash: string;
   relayer_address: string;
   block_number: number | null;
@@ -214,14 +214,12 @@ export interface StartJobResult {
 }
 
 export interface OutputCommitmentInput extends AuthorizationExpiryInput {
-  output_uri?: string;
+  output?: unknown;
   output_hash?: string;
   output_commitment?: string;
 }
 
-export interface FinishJobInput extends OutputCommitmentInput {
-  output?: unknown;
-}
+export type FinishJobInput = OutputCommitmentInput;
 
 export interface SettleAfterReviewTimeoutArgs {
   job_id: string;

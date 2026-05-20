@@ -80,7 +80,7 @@ type CreateJobAuthorizationParams = {
   requestId?: string;
   inputCommitment?: string;
   inputHash?: string;
-  inputUri?: string;
+  inputJson?: unknown;
   expiresAt?: number;
   expiresInSeconds?: number;
 };
@@ -184,7 +184,7 @@ function normalizeRequestId(requestId?: string): string {
 function normalizeInputCommitment(params: {
   inputCommitment?: string;
   inputHash?: string;
-  inputUri?: string;
+  inputJson?: unknown;
   requestId: string;
 }): string {
   if (params.inputCommitment) {
@@ -200,8 +200,8 @@ function normalizeInputCommitment(params: {
       : keccak256(toUtf8Bytes(params.inputHash));
   }
 
-  if (params.inputUri) {
-    return keccak256(toUtf8Bytes(params.inputUri));
+  if (params.inputJson !== undefined) {
+    return keccak256(toUtf8Bytes(JSON.stringify(params.inputJson)));
   }
 
   return keccak256(toUtf8Bytes(params.requestId));
@@ -217,7 +217,6 @@ function normalizeBytes32(value: string, fieldName: string): string {
 export function normalizeOutputCommitment(params: {
   outputCommitment?: string;
   outputHash?: string;
-  outputUri?: string;
   outputJson?: unknown;
 }): string {
   if (params.outputCommitment) {
@@ -228,10 +227,6 @@ export function normalizeOutputCommitment(params: {
     return isBytes32(params.outputHash)
       ? params.outputHash
       : keccak256(toUtf8Bytes(params.outputHash));
-  }
-
-  if (params.outputUri) {
-    return keccak256(toUtf8Bytes(params.outputUri));
   }
 
   if (params.outputJson !== undefined) {
@@ -293,7 +288,7 @@ export async function signCreateJobAuthorization(params: CreateJobAuthorizationP
   const inputCommitment = normalizeInputCommitment({
     inputCommitment: params.inputCommitment,
     inputHash: params.inputHash,
-    inputUri: params.inputUri,
+    inputJson: params.inputJson,
     requestId,
   });
   const queueTimeoutSeconds = minSafeInteger(

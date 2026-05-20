@@ -48,7 +48,7 @@ const createSchema = z.object({
   request_id: z.string().refine(isBytes32, "request_id must be bytes32").optional(),
   user_wallet: z.string().min(1),
   service_id: uint256StringSchema("service_id"),
-  input_uri: z.string().optional(),
+  input: z.unknown().optional(),
   input_hash: z.string().optional(),
   input_commitment: z.string().refine(isBytes32, "input_commitment must be bytes32").optional(),
   queue_timeout_seconds: z.number().int().min(60).optional(),
@@ -68,14 +68,12 @@ const providerSignatureSchema = authExpirySchema.extend({
 });
 
 const outputCommitmentSchema = authExpirySchema.extend({
-  output_uri: z.string().optional(),
+  output: z.unknown().optional(),
   output_hash: z.string().optional(),
   output_commitment: z.string().refine(isBytes32, "output_commitment must be bytes32").optional(),
 });
 
-const deliveryAttestationSchema = outputCommitmentSchema.extend({
-  output: z.unknown().optional(),
-});
+const deliveryAttestationSchema = outputCommitmentSchema;
 
 const acceptanceSchema = outputCommitmentSchema.extend({
   expires_at: z.number().int().positive(),
@@ -90,9 +88,9 @@ const jobResponseSchema = z.object({
   user_wallet: z.string(),
   service_id: z.string(),
   status: z.string(),
-  input_uri: z.string().nullable(),
+  input: z.unknown().nullable(),
   input_hash: z.string().nullable(),
-  output_uri: z.string().nullable(),
+  output: z.unknown().nullable(),
   output_hash: z.string().nullable(),
   error_message: z.string().nullable(),
   queue_deadline: z.string().nullable(),
@@ -691,7 +689,7 @@ export async function jobsRoutes(app: FastifyInstance) {
         requestId: parsed.data.request_id,
         inputCommitment: parsed.data.input_commitment,
         inputHash: parsed.data.input_hash,
-        inputUri: parsed.data.input_uri,
+        inputJson: parsed.data.input,
         queueTimeoutSeconds: parsed.data.queue_timeout_seconds,
         expiresAt: parsed.data.authorization_expires_at,
         expiresInSeconds: parsed.data.authorization_expires_in_seconds,
@@ -702,7 +700,7 @@ export async function jobsRoutes(app: FastifyInstance) {
           request_id: authorization.request_id,
           user_wallet: authorization.user_wallet,
           service_id: parsed.data.service_id,
-          input_uri: parsed.data.input_uri,
+          input: parsed.data.input === undefined ? undefined : (parsed.data.input as Prisma.InputJsonValue),
           input_hash: authorization.input_commitment,
           work_deadline: parsed.data.work_deadline
             ? new Date(parsed.data.work_deadline)
@@ -780,7 +778,7 @@ export async function jobsRoutes(app: FastifyInstance) {
       body: providerSignatureSchema,
       response: {
         200: z.object({
-          input_uri: z.string().nullable(),
+          input: z.unknown().nullable(),
           transaction_hash: z.string(),
           relayer_address: z.string(),
           block_number: z.number().nullable(),
@@ -828,7 +826,7 @@ export async function jobsRoutes(app: FastifyInstance) {
       }
 
       return reply.send({
-        input_uri: job!.input_uri,
+        input: job!.input,
         transaction_hash: relayed.transaction_hash,
         relayer_address: relayed.relayer_address,
         block_number: relayed.block_number,
@@ -897,7 +895,6 @@ export async function jobsRoutes(app: FastifyInstance) {
       const outputCommitment = normalizeOutputCommitment({
         outputCommitment: parsed.data.output_commitment,
         outputHash: parsed.data.output_hash,
-        outputUri: parsed.data.output_uri,
         outputJson: parsed.data.output,
       });
       const attestation = await signDeliveryAttestation({
@@ -918,7 +915,7 @@ export async function jobsRoutes(app: FastifyInstance) {
         },
         data: {
           status: JobStatus.SUBMITTED,
-          output_uri: parsed.data.output_uri,
+          output: parsed.data.output === undefined ? undefined : (parsed.data.output as Prisma.InputJsonValue),
           output_hash: outputCommitment,
           submitted_at: deliveredAtDate,
           delivered_at: deliveredAtDate,
@@ -974,10 +971,13 @@ export async function jobsRoutes(app: FastifyInstance) {
     }
 
     try {
+      const outputJson = Object.prototype.hasOwnProperty.call(parsed.data, "output")
+        ? parsed.data.output
+        : job.output ?? undefined;
       const outputCommitment = normalizeOutputCommitment({
         outputCommitment: parsed.data.output_commitment,
         outputHash: parsed.data.output_hash ?? job.output_hash ?? undefined,
-        outputUri: parsed.data.output_uri ?? job.output_uri ?? undefined,
+        outputJson,
       });
       return reply.send(buildJobAcceptance({
         ...ensureOnchainJob(job),
@@ -1032,10 +1032,13 @@ export async function jobsRoutes(app: FastifyInstance) {
     }
 
     try {
+      const outputJson = Object.prototype.hasOwnProperty.call(parsed.data, "output")
+        ? parsed.data.output
+        : job.output ?? undefined;
       const outputCommitment = normalizeOutputCommitment({
         outputCommitment: parsed.data.output_commitment,
         outputHash: parsed.data.output_hash ?? job.output_hash ?? undefined,
-        outputUri: parsed.data.output_uri ?? job.output_uri ?? undefined,
+        outputJson,
       });
       const acceptance = buildJobAcceptance({
         ...ensureOnchainJob(job),
@@ -1058,7 +1061,7 @@ export async function jobsRoutes(app: FastifyInstance) {
         where: { request_id: job.request_id },
         data: {
           status: JobStatus.SETTLED,
-          output_uri: parsed.data.output_uri ?? job.output_uri,
+          output: parsed.data.output === undefined ? undefined : (parsed.data.output as Prisma.InputJsonValue),
           output_hash: outputCommitment,
           accepted_at: job.accepted_at ?? settledAt,
           settled_at: settledAt,

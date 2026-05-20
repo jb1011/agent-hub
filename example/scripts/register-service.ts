@@ -14,4 +14,6 @@ const transaction = await client.services.create(service);
 console.log("\nPrepared registerService transaction:");
 console.log(JSON.stringify(transaction, null, 2));
 
-await sendPreparedTransaction("registerService", transaction, transaction.from);
+await sendPreparedTransaction("registerService", transaction, {
+  expectedSigner: transaction.from,
+});
