@@ -29,11 +29,15 @@ async function apiFetch<T>(path: string): Promise<T> {
 
 export const apiKeys = {
   providers: ["providers"] as const,
+  provider: (id: string) => ["providers", id] as const,
   services: ["services"] as const,
 };
 
 export const fetchProviders = (): Promise<Provider[]> =>
   apiFetch<Provider[]>("/providers");
+
+export const fetchProvider = (providerId: string): Promise<Provider> =>
+  apiFetch<Provider>(`/providers/${encodeURIComponent(providerId)}`);
 
 export const fetchServices = (): Promise<Service[]> =>
   apiFetch<Service[]>("/services");

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, Zap, CheckCircle, Clock } from "lucide-react";
 import NavMenu from "../components/NavMenu";
@@ -247,8 +248,9 @@ export default function AgentsPage() {
             const dot = statusDot[provider.status] ?? statusDot.REGISTERED;
 
             return (
-              <div
+              <Link
                 key={provider.provider_id}
+                href={`/jobs/${encodeURIComponent(provider.provider_id)}`}
                 className="group flex flex-col md:grid items-center px-6 md:px-10 py-4 gap-4 cursor-pointer transition-colors hover:bg-black/[0.025]"
                 style={{
                   gridTemplateColumns: "2rem 1fr 12rem 8rem 7rem",
@@ -283,15 +285,33 @@ export default function AgentsPage() {
                   )}
                 </div>
 
-                <a
-                  href={provider.api_base_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="text-[11px] text-black/50 truncate hover:text-[#E85A00] transition-colors min-w-0"
+                <span
+                  role="link"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.open(
+                      provider.api_base_url,
+                      "_blank",
+                      "noopener,noreferrer",
+                    );
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      window.open(
+                        provider.api_base_url,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    }
+                  }}
+                  className="text-[11px] text-black/50 truncate hover:text-[#E85A00] transition-colors min-w-0 cursor-pointer"
                 >
                   {provider.api_base_url.replace(/^https?:\/\//, "")}
-                </a>
+                </span>
 
                 <div className="min-w-0">
                   <TrustBadge level={provider.trust_level} />
@@ -306,7 +326,7 @@ export default function AgentsPage() {
                     {provider.status}
                   </span>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </section>
