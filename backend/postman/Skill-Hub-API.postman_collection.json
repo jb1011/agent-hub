@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "name": "Skill Hub API",
-    "description": "Collection Fastify backend (providers, services, jobs, escrows). Importez puis définissez la variable `baseUrl` si besoin.",
+    "description": "Fastify backend collection for providers, services, and jobs. Import it and set the `baseUrl` variable if needed.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,7 +10,11 @@
     { "key": "providerId", "value": "1" },
     { "key": "serviceId", "value": "1" },
     { "key": "jobId", "value": "" },
-    { "key": "escrowId", "value": "" }
+    { "key": "inputCommitment", "value": "0x1111111111111111111111111111111111111111111111111111111111111111" },
+    { "key": "outputCommitment", "value": "0x2222222222222222222222222222222222222222222222222222222222222222" },
+    { "key": "signatureExpiresAt", "value": "1893456000" },
+    { "key": "providerSignature", "value": "0x" },
+    { "key": "userSignature", "value": "0x" }
   ],
   "item": [
     {
@@ -22,7 +26,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/health",
-            "description": "Réponse: { \"ok\": true }"
+            "description": "Response: { \"ok\": true }"
           }
         }
       ]
@@ -44,7 +48,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/providers/{{providerId}}",
-            "description": "Renseignez `providerId` dans les variables de collection."
+            "description": "Set `providerId` in the collection variables."
           }
         },
         {
@@ -90,7 +94,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/services",
-            "description": "Query optionnels: ?provider_id=&status= (ex. ACTIVE)"
+            "description": "Optional query parameters: ?provider_id=&status= (for example ACTIVE)."
           }
         },
         {
@@ -108,10 +112,10 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"service_id\": \"{{serviceId}}\",\n  \"provider_id\": \"{{providerId}}\",\n  \"name\": \"Text API\",\n  \"description\": \"Optional\",\n  \"service_type\": \"AI\",\n  \"endpoint_path\": \"/v1/process\",\n  \"input_schema\": { \"type\": \"object\" },\n  \"output_schema\": { \"type\": \"object\" },\n  \"price_usdc\": 1.5,\n  \"timeout_seconds\": 300,\n  \"status\": \"ACTIVE\"\n}"
+              "raw": "{\n  \"service_id\": \"{{serviceId}}\",\n  \"provider_id\": \"{{providerId}}\",\n  \"name\": \"Text API\",\n  \"description\": \"Optional\",\n  \"service_type\": \"AI\",\n  \"endpoint_path\": \"/v1/process\",\n  \"input_schema\": { \"type\": \"object\" },\n  \"output_schema\": { \"type\": \"object\" },\n  \"price_usdc\": 1.5,\n  \"max_concurrent_jobs\": 2,\n  \"timeout_seconds\": 300,\n  \"status\": \"ACTIVE\"\n}"
             },
             "url": "{{baseUrl}}/services",
-            "description": "Renseignez `providerId` (id retourné par Create provider)."
+            "description": "Set `providerId` to an existing provider id."
           }
         },
         {
@@ -145,7 +149,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/jobs",
-            "description": "Query optionnels: ?user_wallet=&service_id=&status= (statut enum job)"
+            "description": "Optional query parameters: ?user_wallet=&service_id=&status=."
           }
         },
         {
@@ -163,104 +167,92 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"user_wallet\": \"0x00000000000000000000000000000000000000aa\",\n  \"service_id\": \"{{serviceId}}\",\n  \"input_uri\": \"ipfs://…\",\n  \"input_hash\": \"0x…\",\n  \"work_deadline\": \"2026-12-31T23:59:59.000Z\",\n  \"review_deadline\": \"2027-01-07T23:59:59.000Z\"\n}"
+              "raw": "{\n  \"user_wallet\": \"0x00000000000000000000000000000000000000aa\",\n  \"service_id\": \"{{serviceId}}\",\n  \"input_uri\": \"ipfs://input\",\n  \"input_commitment\": \"{{inputCommitment}}\",\n  \"queue_timeout_seconds\": 3600,\n  \"authorization_expires_in_seconds\": 3600\n}"
             },
             "url": "{{baseUrl}}/jobs"
           }
         },
         {
-          "name": "Patch job status",
+          "name": "Start authorization request",
           "request": {
-            "method": "PATCH",
+            "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"FUNDED\",\n  \"output_uri\": null,\n  \"output_hash\": null,\n  \"error_message\": null\n}"
+              "raw": "{\n  \"expires_at\": {{signatureExpiresAt}}\n}"
             },
-            "url": "{{baseUrl}}/jobs/{{jobId}}/status",
-            "description": "Adaptez `status` selon les transitions autorisées (CREATED→FUNDED, etc.)."
+            "url": "{{baseUrl}}/jobs/{{jobId}}/start-authorization-request",
+            "description": "Returns the EIP-712 typed data that the provider must sign for `startJob` and the unsigned `start_job_args`."
           }
-        }
-      ]
-    },
-    {
-      "name": "Escrows",
-      "item": [
+        },
         {
-          "name": "Get escrow by id",
+          "name": "Start job args",
           "request": {
-            "method": "GET",
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_signature\": \"{{providerSignature}}\",\n  \"expires_at\": {{signatureExpiresAt}}\n}"
+            },
+            "url": "{{baseUrl}}/jobs/{{jobId}}/start-job",
+            "description": "Relays `startJob(jobId, expiresAt, providerSignature)` and returns the job `input_uri` plus transaction metadata. `provider_signature` must come from signing the Start authorization request payload."
+          }
+        },
+        {
+          "name": "Job finish",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"output\": { \"result\": \"ok\" },\n  \"output_uri\": \"ipfs://output\",\n  \"output_commitment\": \"{{outputCommitment}}\",\n  \"expires_in_seconds\": 3600\n}"
+            },
+            "url": "{{baseUrl}}/jobs/{{jobId}}/job-finish",
+            "description": "Called by the provider when the job is finished. The backend performs minimal output schema validation, signs and stores the DeliveryAttestation, then returns the settlement arguments. NoDeliveryAttestations are emitted automatically by the backend after `work_deadline`."
+          }
+        },
+        {
+          "name": "Acceptance request",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"output_commitment\": \"{{outputCommitment}}\",\n  \"expires_at\": {{signatureExpiresAt}}\n}"
+            },
+            "url": "{{baseUrl}}/jobs/{{jobId}}/acceptance-request",
+            "description": "Returns the EIP-712 typed data that the user must sign to accept the output. Use the same `signatureExpiresAt` value in the settlement request."
+          }
+        },
+        {
+          "name": "Acceptance",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expires_at\": {{signatureExpiresAt}},\n  \"user_signature\": \"{{userSignature}}\"\n}"
+            },
+            "url": "{{baseUrl}}/jobs/{{jobId}}/acceptance",
+            "description": "Submits the user's acceptance signature and relays `settleWithUserSignature`. The backend uses the stored output commitment from `job-finish`; `output_commitment` can be added if an explicit override is needed."
+          }
+        },
+        {
+          "name": "Refund after queue timeout args",
+          "request": {
+            "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/escrows/{{escrowId}}"
+            "url": "{{baseUrl}}/jobs/{{jobId}}/refund-after-queue-timeout",
+            "description": "Returns the arguments for `refundAfterQueueTimeout` after the queue deadline has expired."
           }
         },
         {
-          "name": "Get escrow by job",
+          "name": "Refund after final timeout args",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/jobs/{{jobId}}/escrow"
-          }
-        },
-        {
-          "name": "Create escrow",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"job_id\": \"{{jobId}}\",\n  \"chain_id\": 1,\n  \"token_address\": \"0x0000000000000000000000000000000000000000\",\n  \"escrow_contract\": \"0x0000000000000000000000000000000000000000\",\n  \"amount_usdc\": 10,\n  \"platform_fee_usdc\": 0.5,\n  \"provider_payout_usdc\": 9.5\n}"
-            },
-            "url": "{{baseUrl}}/escrows"
-          }
-        },
-        {
-          "name": "Fund escrow",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fund_tx_hash\": \"0xabc…\"\n}"
-            },
-            "url": "{{baseUrl}}/escrows/{{escrowId}}/fund"
-          }
-        },
-        {
-          "name": "Release escrow",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"release_tx_hash\": \"0xdef…\"\n}"
-            },
-            "url": "{{baseUrl}}/escrows/{{escrowId}}/release"
-          }
-        },
-        {
-          "name": "Refund escrow",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refund_tx_hash\": \"0x789…\"\n}"
-            },
-            "url": "{{baseUrl}}/escrows/{{escrowId}}/refund"
-          }
-        },
-        {
-          "name": "Dispute escrow",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{}"
-            },
-            "url": "{{baseUrl}}/escrows/{{escrowId}}/dispute",
-            "description": "Corps ignoré par l’API ; champ présent pour Postman."
+            "url": "{{baseUrl}}/jobs/{{jobId}}/refund-after-final-timeout",
+            "description": "Returns the arguments for `refundAfterFinalTimeout` after the final refund deadline has expired."
           }
         }
       ]

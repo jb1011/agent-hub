@@ -5,6 +5,11 @@
     "build": "forge build",
     "deploy": "forge build && ts-node script/deploy.ts",
     "create-job": "forge build && ts-node script/create-job.ts",
+    "generate-provider-signature": "ts-node script/generate-provider-signature.ts",
+    "generate-user-signature": "ts-node script/generate-user-signature.ts",
+    "refund-with-no-delivery-attestation": "forge build && ts-node script/refund-with-no-delivery-attestation.ts",
+    "settle-with-user-signature": "forge build && ts-node script/settle-with-user-signature.ts",
+    "start-job": "forge build && ts-node script/start-job.ts",
     "register-provider-service": "forge build && ts-node script/register-provider-service.ts"
   },
   "dependencies": {

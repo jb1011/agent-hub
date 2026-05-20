@@ -8,16 +8,20 @@
  *   list       [status]
  *   get        <request_id|job_id>
  *   create     <user_wallet> <service_id>
- *   link       <request_id> <job_id>
- *   status     <request_id|job_id> <new_status>
+ *   start-auth <request_id|job_id> [expires_in_seconds]
+ *   start      <request_id|job_id> <provider_signature> [expires_at]
+ *   finish     <request_id|job_id> <output_json> [output_uri]
+ *   accept-req <request_id|job_id> <output_commitment> [expires_in_seconds]
+ *   accept     <request_id|job_id> <output_commitment> <expires_at> <user_signature>
  *
  * Examples:
  *   node examples/jobs.mjs list
  *   node examples/jobs.mjs list FUNDED
  *   node examples/jobs.mjs get abc-123
  *   node examples/jobs.mjs create 0xUserWallet 10
- *   node examples/jobs.mjs link abc-123 42
- *   node examples/jobs.mjs status abc-123 RUNNING
+ *   node examples/jobs.mjs start-auth abc-123
+ *   node examples/jobs.mjs finish abc-123 '{"result":"ok"}' ipfs://output
+ *   node examples/jobs.mjs accept-req abc-123 0xabc...
  */
 
 import { SkillHubClient } from "../dist/index.js";
@@ -34,10 +38,11 @@ Usage: node examples/jobs.mjs <command> [args]
   list       [status]
   get        <request_id|job_id>
   create     <user_wallet> <service_id>
-  link       <request_id> <job_id>
-  status     <request_id|job_id> <new_status>
-
-Valid statuses: CREATED FUNDED RUNNING SUBMITTED ACCEPTED SETTLED FAILED EXPIRED REFUNDED DISPUTED
+  start-auth <request_id|job_id> [expires_in_seconds]
+  start      <request_id|job_id> <provider_signature> [expires_at]
+  finish     <request_id|job_id> <output_json> [output_uri]
+  accept-req <request_id|job_id> <output_commitment> [expires_in_seconds]
+  accept     <request_id|job_id> <output_commitment> <expires_at> <user_signature>
 `);
   process.exit(1);
 }
@@ -72,21 +77,63 @@ async function run() {
       break;
     }
 
-    case "link": {
-      const [id, job_id] = args;
-      if (!id || !job_id) usage();
-      const job = await client.jobs.linkOnchainJob(id, job_id);
-      console.log("\nLinked job:");
-      console.log(JSON.stringify(job, null, 2));
+    case "start-auth": {
+      const [id, expires_in_seconds] = args;
+      if (!id) usage();
+      const result = await client.jobs.requestStartAuthorization(id, {
+        ...(expires_in_seconds ? { expires_in_seconds: Number(expires_in_seconds) } : {}),
+      });
+      console.log("\nStart authorization request:");
+      console.log(JSON.stringify(result, null, 2));
       break;
     }
 
-    case "status": {
-      const [id, status] = args;
-      if (!id || !status) usage();
-      const job = await client.jobs.transitionStatus(id, { status });
-      console.log(`\nJob status updated to ${job.status}:`);
-      console.log(JSON.stringify(job, null, 2));
+    case "start": {
+      const [id, provider_signature, expires_at] = args;
+      if (!id || !provider_signature) usage();
+      const result = await client.jobs.startJob(id, {
+        provider_signature,
+        ...(expires_at ? { expires_at: Number(expires_at) } : {}),
+      });
+      console.log("\nJob started:");
+      console.log(JSON.stringify(result, null, 2));
+      break;
+    }
+
+    case "finish": {
+      const [id, output_json, output_uri] = args;
+      if (!id || !output_json) usage();
+      const result = await client.jobs.finishJob(id, {
+        output: JSON.parse(output_json),
+        ...(output_uri ? { output_uri } : {}),
+      });
+      console.log("\nJob finished:");
+      console.log(JSON.stringify(result, null, 2));
+      break;
+    }
+
+    case "accept-req": {
+      const [id, output_commitment, expires_in_seconds] = args;
+      if (!id || !output_commitment) usage();
+      const result = await client.jobs.requestAcceptance(id, {
+        output_commitment,
+        ...(expires_in_seconds ? { expires_in_seconds: Number(expires_in_seconds) } : {}),
+      });
+      console.log("\nAcceptance request:");
+      console.log(JSON.stringify(result, null, 2));
+      break;
+    }
+
+    case "accept": {
+      const [id, output_commitment, expires_at, user_signature] = args;
+      if (!id || !output_commitment || !expires_at || !user_signature) usage();
+      const result = await client.jobs.acceptance(id, {
+        output_commitment,
+        expires_at: Number(expires_at),
+        user_signature,
+      });
+      console.log("\nJob accepted and settled:");
+      console.log(JSON.stringify(result, null, 2));
       break;
     }
 

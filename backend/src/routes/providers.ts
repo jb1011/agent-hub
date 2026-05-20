@@ -60,6 +60,7 @@ export async function providersRoutes(app: FastifyInstance) {
             z.object({
               service_id: z.string(),
               name: z.string(),
+              max_concurrent_jobs: z.number(),
               status: z.string(),
             })
           ),
@@ -80,6 +81,7 @@ export async function providersRoutes(app: FastifyInstance) {
       services: provider.services.map((s) => ({
         service_id: s.service_id,
         name: s.name,
+        max_concurrent_jobs: s.max_concurrent_jobs,
         status: s.status,
       })),
     });

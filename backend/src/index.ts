@@ -11,8 +11,11 @@ import {
 } from "@fastify/type-provider-zod";
 import { providersRoutes } from "./routes/providers.js";
 import { servicesRoutes } from "./routes/services.js";
-import { jobsRoutes } from "./routes/jobs.js";
-import { escrowsRoutes } from "./routes/escrows.js";
+import {
+  jobsRoutes,
+  startNoDeliveryAttestationWorker,
+  startReviewTimeoutSettlementWorker,
+} from "./routes/jobs.js";
 import { startEscrowJobCreatedListener } from "./listeners/escrow-job-created.js";
 
 const app = Fastify({ logger: true });
@@ -36,7 +39,6 @@ await app.register(swagger, {
       { name: "Providers", description: "AI service provider registration and management" },
       { name: "Services", description: "On-chain service catalogue" },
       { name: "Jobs", description: "Job lifecycle: creation, status transitions, and authorisations" },
-      { name: "Escrows", description: "USDC escrow fund / release / refund / dispute flows" },
     ],
   },
 });
@@ -54,12 +56,25 @@ app.get("/health", { schema: { tags: ["Health"] } }, async () => ({ ok: true }))
 await app.register(providersRoutes);
 await app.register(servicesRoutes);
 await app.register(jobsRoutes);
-await app.register(escrowsRoutes);
 
 const escrowJobCreatedListener = startEscrowJobCreatedListener(app.log);
 if (escrowJobCreatedListener) {
   app.addHook("onClose", async () => {
     await escrowJobCreatedListener.close();
+  });
+}
+
+const noDeliveryAttestationWorker = startNoDeliveryAttestationWorker(app.log);
+if (noDeliveryAttestationWorker) {
+  app.addHook("onClose", async () => {
+    await noDeliveryAttestationWorker.close();
+  });
+}
+
+const reviewTimeoutSettlementWorker = startReviewTimeoutSettlementWorker(app.log);
+if (reviewTimeoutSettlementWorker) {
+  app.addHook("onClose", async () => {
+    await reviewTimeoutSettlementWorker.close();
   });
 }
 

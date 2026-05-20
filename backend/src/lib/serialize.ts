@@ -35,6 +35,7 @@ export function serializeService(s: Service) {
     input_schema: s.input_schema,
     output_schema: s.output_schema,
     price_usdc: dec(s.price_usdc),
+    max_concurrent_jobs: s.max_concurrent_jobs,
     timeout_seconds: s.timeout_seconds,
     status: s.status,
     created_at: dt(s.created_at),
@@ -59,8 +60,14 @@ export function serializeJob(j: Job) {
     submitted_at: dt(j.submitted_at),
     accepted_at: dt(j.accepted_at),
     settled_at: dt(j.settled_at),
+    queue_deadline: dt(j.queue_deadline),
     work_deadline: dt(j.work_deadline),
     review_deadline: dt(j.review_deadline),
+    final_refund_deadline: dt(j.final_refund_deadline),
+    delivered_at: dt(j.delivered_at),
+    delivery_attestation: j.delivery_attestation,
+    no_delivery_attestation: j.no_delivery_attestation,
+    no_delivery_attested_at: dt(j.no_delivery_attested_at),
     error_message: j.error_message,
   };
 }
