@@ -1,0 +1,30 @@
+{
+  "service_id": "2",
+  "provider_id": "2",
+  "name": "Demo Text Generation",
+  "description": "Example service registered from the local SDK",
+  "service_type": "text_generation",
+  "endpoint_path": "/generate",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "prompt": {
+        "type": "string"
+      }
+    },
+    "required": ["prompt"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": ["text"]
+  },
+  "price_usdc": 1,
+  "max_concurrent_jobs": 5,
+  "timeout_seconds": 300,
+  "status": "REGISTERED"
+}

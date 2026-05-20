@@ -1,0 +1,10 @@
+{
+  "provider_id": "2",
+  "name": "Demo Provider",
+  "description": "Example provider registered from the local SDK",
+  "owner_wallet": "0x0000000000000000000000000000000000000001",
+  "payout_wallet": "0x0000000000000000000000000000000000000001",
+  "api_base_url": "https://provider.example.com",
+  "trust_level": "UNVERIFIED",
+  "status": "REGISTERED"
+}
