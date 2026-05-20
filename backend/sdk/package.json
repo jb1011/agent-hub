@@ -1,5 +1,5 @@
 {
-  "name": "@skill-hub/sdk",
+  "name": "skillhub-sdk",
   "version": "0.1.0",
   "description": "Official SDK for interacting with the Skill Hub API",
   "type": "module",
