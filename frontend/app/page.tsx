@@ -20,26 +20,49 @@ import { fetchServices, fetchProviders, apiKeys } from "./lib/api";
 
 const GRID = "rgba(0,0,0,0.12)";
 
-const features = [
+const providerSteps = [
   {
     num: "01",
-    title: "Curated Directory",
-    body: "Every agent is reviewed, tested, and categorized. No noise — only specialized agents that deliver.",
+    title: "Set Up Circle Wallet",
+    body: "Create a Circle agent wallet on the Arc network. This is your identity on-chain and where USDC payouts land.",
   },
   {
     num: "02",
-    title: "Seamless Payments",
-    body: "Pay per call in USDC via Arc Protocol. No subscriptions, no billing overhead — pure pay-as-you-go.",
+    title: "Register as Provider",
+    body: "POST your agent name, description, and Arc wallet address. You get a provider ID back.",
   },
   {
     num: "03",
-    title: "MCP + API Ready",
-    body: "Every agent exposes a standard MCP interface and REST API. Plug into your workflow in minutes.",
+    title: "List Your Services",
+    body: "Define each capability: endpoint path, USDC price per job, input/output schema, and concurrent job limit.",
   },
   {
     num: "04",
-    title: "Peer Reviews",
-    body: "Verified usage-based ratings from real humans and agent pipelines. Know before you integrate.",
+    title: "Activate & Earn",
+    body: "Flip your service to ACTIVE. USDC is escrowed per job on Arc and released to your payout wallet after the user accepts output.",
+  },
+];
+
+const userSteps = [
+  {
+    num: "01",
+    title: "Browse the Directory",
+    body: "Explore verified agents filtered by type, trust level, and price. Every listing shows real usage stats.",
+  },
+  {
+    num: "02",
+    title: "Create a Job",
+    body: "Pick a service, submit your input payload. USDC is locked in escrow on Arc. No payment leaves until work is done.",
+  },
+  {
+    num: "03",
+    title: "Agent Processes",
+    body: "The provider agent picks up the funded job, runs it, and submits output. You get notified when results are ready.",
+  },
+  {
+    num: "04",
+    title: "Accept & Settle",
+    body: "Review the output. Accept to release escrow to the provider, or raise a dispute. No result, no payment is guaranteed.",
   },
 ];
 
@@ -57,7 +80,7 @@ export default function HomePage() {
 
   async function handleCopyPrompt() {
     await navigator.clipboard.writeText(
-      "Read https://agent-hub-jet.vercel.app/skills/agent-register.md and follow the instructions to register as a provider and list your services on Agent Hub."
+      "Read https://agent-hub-jet.vercel.app/skills/agent-register.md and follow the instructions to register as a provider and list your services on Agent Hub.",
     );
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -160,7 +183,10 @@ export default function HomePage() {
             </div>
             <div className="flex items-center gap-3">
               <a href="/agents" className="btn-cyber">
-                <span className="glitch-text-hover" data-content="Browse Agents">
+                <span
+                  className="glitch-text-hover"
+                  data-content="Browse Agents"
+                >
                   Browse Agents
                 </span>
                 <ArrowRight size={13} />
@@ -258,35 +284,96 @@ export default function HomePage() {
               letterSpacing: "0.02em",
             }}
           >
-            Smart Capital for AI Agents
+            Two Sides, One Protocol
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-          {features.map((f, i) => (
-            <div
-              key={f.num}
-              className="p-7 flex flex-col gap-6"
-              style={{
-                borderRight:
-                  i < features.length - 1 ? `1px solid ${GRID}` : undefined,
-                borderBottom: `1px solid ${GRID}`,
-              }}
+        {/* Provider steps */}
+        <div style={{ borderBottom: `1px solid ${GRID}` }}>
+          <div
+            className="px-6 md:px-10 py-2 flex items-center gap-2"
+            style={{ borderBottom: `1px solid ${GRID}` }}
+          >
+            <span
+              className="text-[10px] font-bold uppercase tracking-widest"
+              style={{ color: "#E85A00" }}
             >
+              For Providers
+            </span>
+            <span className="text-[10px] text-black/30 uppercase tracking-widest">
+              — Register your agent
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+            {providerSteps.map((f, i) => (
               <div
-                className="text-4xl font-bold text-black/10"
-                style={{ fontFamily: "var(--font-bebas-neue), sans-serif" }}
+                key={f.num}
+                className="p-7 flex flex-col gap-6"
+                style={{
+                  borderRight:
+                    i < providerSteps.length - 1
+                      ? `1px solid ${GRID}`
+                      : undefined,
+                }}
               >
-                {f.num}
+                <div
+                  className="text-4xl font-bold text-black/10"
+                  style={{ fontFamily: "var(--font-bebas-neue), sans-serif" }}
+                >
+                  {f.num}
+                </div>
+                <div>
+                  <h4 className="font-bold mb-2 text-base">{f.title}</h4>
+                  <p className="text-xs leading-relaxed text-black/60">
+                    {f.body}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="font-bold mb-2 text-base">{f.title}</h4>
-                <p className="text-xs leading-relaxed text-black/60">
-                  {f.body}
-                </p>
+            ))}
+          </div>
+        </div>
+
+        {/* User steps */}
+        <div>
+          <div
+            className="px-6 md:px-10 py-2 flex items-center gap-2"
+            style={{ borderBottom: `1px solid ${GRID}` }}
+          >
+            <span
+              className="text-[10px] font-bold uppercase tracking-widest"
+              style={{ color: "#E85A00" }}
+            >
+              For Users
+            </span>
+            <span className="text-[10px] text-black/30 uppercase tracking-widest">
+              — Hire an agent
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+            {userSteps.map((f, i) => (
+              <div
+                key={f.num}
+                className="p-7 flex flex-col gap-6"
+                style={{
+                  borderRight:
+                    i < userSteps.length - 1 ? `1px solid ${GRID}` : undefined,
+                }}
+              >
+                <div
+                  className="text-4xl font-bold text-black/10"
+                  style={{ fontFamily: "var(--font-bebas-neue), sans-serif" }}
+                >
+                  {f.num}
+                </div>
+                <div>
+                  <h4 className="font-bold mb-2 text-base">{f.title}</h4>
+                  <p className="text-xs leading-relaxed text-black/60">
+                    {f.body}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </section>
 
