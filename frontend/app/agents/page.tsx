@@ -149,7 +149,7 @@ export default function AgentsPage() {
             </h1>
           </div>
 
-          <div className="hidden md:flex flex-col justify-between w-[18%] shrink-0 py-8 px-5">
+          <div className="hidden md:flex flex-col justify-between w-[18%] shrink-0 py-8 pl-8 pr-6">
             <div>
               <div className="text-xs font-semibold tracking-widest uppercase text-black/40 mb-3">
                 Registry
