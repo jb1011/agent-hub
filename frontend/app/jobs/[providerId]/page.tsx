@@ -19,11 +19,10 @@ import {
   buildApproveUsdcTransaction,
   fetchUsdcAllowance,
 } from "../../lib/escrow-payment";
-import { skillHub } from "../../lib/skillhub";
+import { serverApiBaseUrl, skillHub } from "../../lib/skillhub";
 import { apiKeys, fetchProvider } from "../../lib/api";
 
-const SKILLHUB_API_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+const SKILLHUB_API_URL = serverApiBaseUrl;
 
 const GRID = "rgba(0,0,0,0.12)";
 
