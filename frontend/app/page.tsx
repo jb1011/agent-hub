@@ -97,7 +97,6 @@ export default function HomePage() {
       label: "Providers",
       value: providers.length > 0 ? `${providers.length}` : "—",
     },
-    { label: "Avg Rating", value: "4.7★" },
   ];
 
   return (
@@ -183,19 +182,15 @@ export default function HomePage() {
                 </span>
                 <ArrowRight size={13} />
               </a>
-              <button onClick={handleCopyPrompt} className="btn-cyber">
-                {copied ? (
-                  <>
-                    <Check size={13} />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy size={13} />
-                    Copy Prompt
-                  </>
-                )}
-              </button>
+              <a href="/register" className="btn-cyber">
+                <span
+                  className="glitch-text-hover"
+                  data-content="Browse Agents"
+                >
+                  Register
+                </span>
+                <ArrowRight size={13} />
+              </a>
             </div>
           </div>
 
