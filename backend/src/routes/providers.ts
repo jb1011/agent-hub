@@ -26,6 +26,7 @@ const createSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   owner_wallet: evmAddressSchema("owner_wallet"),
+  signer_wallet: evmAddressSchema("signer_wallet").optional(),
   payout_wallet: evmAddressSchema("payout_wallet"),
   api_base_url: z.string().url(),
   service_type: z.string().min(1),
@@ -52,6 +53,7 @@ const providerResponseSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   owner_wallet: z.string(),
+  signer_wallet: z.string(),
   payout_wallet: z.string(),
   api_base_url: z.string(),
   trust_level: z.string(),
@@ -86,6 +88,7 @@ function normalizeProviderAddresses<T extends ProviderCreateInput | ProviderUpda
   return {
     ...data,
     ...(data.owner_wallet ? { owner_wallet: getAddress(data.owner_wallet) } : {}),
+    ...(data.signer_wallet ? { signer_wallet: getAddress(data.signer_wallet) } : {}),
     ...(data.payout_wallet ? { payout_wallet: getAddress(data.payout_wallet) } : {}),
   };
 }
@@ -172,6 +175,7 @@ export async function providersRoutes(app: FastifyInstance) {
             status: "REGISTERED",
             trust_level: "UNVERIFIED",
             ...providerInput,
+            signer_wallet: providerInput.signer_wallet ?? providerInput.owner_wallet,
             input_schema: providerInput.input_schema as Prisma.InputJsonValue ?? undefined,
             output_schema: providerInput.output_schema as Prisma.InputJsonValue ?? undefined,
           },

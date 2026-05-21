@@ -4,6 +4,7 @@ import { isUint256String } from "./uint256.js";
 const REGISTER_PROVIDER_TYPES: Record<string, TypedDataField[]> = {
   RegisterProviderAuthorization: [
     { name: "owner", type: "address" },
+    { name: "signer", type: "address" },
     { name: "payoutWallet", type: "address" },
     { name: "price", type: "uint256" },
     { name: "workTimeout", type: "uint64" },
@@ -23,6 +24,7 @@ export class RegisterProviderAuthorizationError extends Error {
 
 type RegisterProviderAuthorizationParams = {
   ownerWallet: string;
+  signerWallet: string;
   payoutWallet: string;
   priceUsdc: string;
   workTimeoutSeconds: number;
@@ -117,6 +119,7 @@ export async function signRegisterProviderAuthorization(params: RegisterProvider
 
   const value = {
     owner: normalizeAddress(params.ownerWallet, "owner_wallet"),
+    signer: normalizeAddress(params.signerWallet, "signer_wallet"),
     payoutWallet: normalizeAddress(params.payoutWallet, "payout_wallet"),
     price: parseUnits(params.priceUsdc, 6),
     workTimeout: BigInt(positiveSafeInteger(params.workTimeoutSeconds, "work_timeout_seconds")),
@@ -128,6 +131,7 @@ export async function signRegisterProviderAuthorization(params: RegisterProvider
 
   return {
     owner_wallet: value.owner,
+    signer_wallet: value.signer,
     payout_wallet: value.payoutWallet,
     price: value.price.toString(),
     work_timeout: Number(value.workTimeout),

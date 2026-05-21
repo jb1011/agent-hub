@@ -2,6 +2,7 @@
   "name": "Demo Provider",
   "description": "Test provider E2E",
   "owner_wallet": "0x8A567b01249c7Da966016C742c234B38c2a68122",
+  "signer_wallet": "0x8A567b01249c7Da966016C742c234B38c2a68122",
   "payout_wallet": "0x8A567b01249c7Da966016C742c234B38c2a68122",
   "api_base_url": "https://provider.example.com",
   "trust_level": "UNVERIFIED",

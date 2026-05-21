@@ -17,6 +17,7 @@ export function serializeProvider(p: Provider) {
     description: p.description,
     status: p.status,
     owner_wallet: p.owner_wallet,
+    signer_wallet: p.signer_wallet,
     payout_wallet: p.payout_wallet,
     api_base_url: p.api_base_url,
     trust_level: p.trust_level,

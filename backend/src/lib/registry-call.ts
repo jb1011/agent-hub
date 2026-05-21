@@ -12,7 +12,7 @@ type Deployment = {
 };
 
 const AGENT_HUB_REGISTRY_INTERFACE = new Interface([
-  "function registerProvider(address payoutWallet, uint256 price, uint64 workTimeout, bytes32 metadataCommitment, uint256 expiresAt, bytes registrationAttesterSignature)",
+  "function registerProvider(address signer, address payoutWallet, uint256 price, uint64 workTimeout, bytes32 metadataCommitment, uint256 expiresAt, bytes registrationAttesterSignature)",
 ]);
 
 export type ProviderRegistryMetadata = {
@@ -22,6 +22,7 @@ export type ProviderRegistryMetadata = {
   description: string | null;
   status: string;
   owner_wallet: string;
+  signer_wallet: string;
   payout_wallet: string;
   api_base_url: string;
   trust_level: string;
@@ -78,6 +79,7 @@ export async function buildRegisterProviderCall(metadata: ProviderRegistryMetada
   const commitment = computeProviderMetadataCommitment(metadata);
   const authorization = await signRegisterProviderAuthorization({
     ownerWallet: metadata.owner_wallet,
+    signerWallet: metadata.signer_wallet,
     payoutWallet: metadata.payout_wallet,
     priceUsdc: metadata.price_usdc,
     workTimeoutSeconds: metadata.timeout_seconds,
@@ -85,6 +87,7 @@ export async function buildRegisterProviderCall(metadata: ProviderRegistryMetada
   });
 
   const args = {
+    signer_wallet: authorization.signer_wallet,
     payout_wallet: authorization.payout_wallet,
     price: authorization.price,
     work_timeout: authorization.work_timeout,
@@ -101,6 +104,7 @@ export async function buildRegisterProviderCall(metadata: ProviderRegistryMetada
       registryAddress,
       "registerProvider",
       [
+        args.signer_wallet,
         args.payout_wallet,
         args.price,
         args.work_timeout,

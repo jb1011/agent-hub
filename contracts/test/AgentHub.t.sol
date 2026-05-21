@@ -59,12 +59,14 @@ contract AgentHubTest is Test {
 
     uint256 private constant USER_PK = 0xA11CE;
     uint256 private constant PROVIDER_OWNER_PK = 0xB0B;
+    uint256 private constant PROVIDER_SIGNER_PK = 0x51A7E;
     uint256 private constant ATTESTER_PK = 0xA77E57;
     uint256 private constant NEW_ATTESTER_PK = 0xA77E58;
     bytes32 private constant REQUEST_ID = keccak256("request-id");
 
     address private user = vm.addr(USER_PK);
     address private providerOwner = vm.addr(PROVIDER_OWNER_PK);
+    address private providerSigner = vm.addr(PROVIDER_SIGNER_PK);
     address private attester = vm.addr(ATTESTER_PK);
     address private newAttester = vm.addr(NEW_ATTESTER_PK);
     address private providerPayout = address(0xCAFE);
@@ -140,7 +142,7 @@ contract AgentHubTest is Test {
         uint256 jobId = _createJob();
         AgentHubEscrow.Job memory job = escrow.getJob(jobId);
         uint256 expiresAt = job.queueDeadline + 1 hours;
-        bytes memory signature = _signStartJob(ATTESTER_PK, jobId, expiresAt);
+        bytes memory signature = _signStartJob(PROVIDER_SIGNER_PK, jobId, expiresAt);
 
         vm.warp(job.queueDeadline + 1);
         vm.expectRevert(AgentHubEscrow.QueueDeadlineExceeded.selector);
@@ -150,7 +152,7 @@ contract AgentHubTest is Test {
     function test_StartJobRevertsWithWrongSignature() public {
         uint256 jobId = _createJob();
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signStartJob(PROVIDER_OWNER_PK, jobId, expiresAt);
+        bytes memory signature = _signStartJob(ATTESTER_PK, jobId, expiresAt);
 
         vm.expectRevert(AgentHubEscrow.InvalidSignature.selector);
         escrow.startJob(jobId, expiresAt, signature);
@@ -159,7 +161,7 @@ contract AgentHubTest is Test {
     function test_StartJobReplayRevertsWhenJobIsNoLongerQueued() public {
         uint256 jobId = _createJob();
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signStartJob(ATTESTER_PK, jobId, expiresAt);
+        bytes memory signature = _signStartJob(PROVIDER_SIGNER_PK, jobId, expiresAt);
 
         escrow.startJob(jobId, expiresAt, signature);
 
@@ -170,7 +172,7 @@ contract AgentHubTest is Test {
     function test_StartJobRevertsWhenProviderWasDisabledAfterFunding() public {
         uint256 jobId = _createJob();
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature = _signStartJob(ATTESTER_PK, jobId, expiresAt);
+        bytes memory signature = _signStartJob(PROVIDER_SIGNER_PK, jobId, expiresAt);
 
         registry.setProviderStatus(providerId, IAgentHubRegistry.ProviderStatus.DISABLED);
 
@@ -428,8 +430,8 @@ contract AgentHubTest is Test {
         uint256 secondJobId = _createJob();
         uint256 expiresAt = block.timestamp + 1 hours;
 
-        escrow.startJob(secondJobId, expiresAt, _signStartJob(ATTESTER_PK, secondJobId, expiresAt));
-        escrow.startJob(firstJobId, expiresAt, _signStartJob(ATTESTER_PK, firstJobId, expiresAt));
+        escrow.startJob(secondJobId, expiresAt, _signStartJob(PROVIDER_SIGNER_PK, secondJobId, expiresAt));
+        escrow.startJob(firstJobId, expiresAt, _signStartJob(PROVIDER_SIGNER_PK, firstJobId, expiresAt));
 
         bytes32 firstOutputCommitment = keccak256("first output");
         bytes32 secondOutputCommitment = keccak256("second output");
@@ -457,8 +459,8 @@ contract AgentHubTest is Test {
         uint256 secondJobId = _createJob();
         uint256 startExpiresAt = block.timestamp + 1 hours;
 
-        escrow.startJob(secondJobId, startExpiresAt, _signStartJob(ATTESTER_PK, secondJobId, startExpiresAt));
-        escrow.startJob(firstJobId, startExpiresAt, _signStartJob(ATTESTER_PK, firstJobId, startExpiresAt));
+        escrow.startJob(secondJobId, startExpiresAt, _signStartJob(PROVIDER_SIGNER_PK, secondJobId, startExpiresAt));
+        escrow.startJob(firstJobId, startExpiresAt, _signStartJob(PROVIDER_SIGNER_PK, firstJobId, startExpiresAt));
 
         AgentHubEscrow.Job memory firstJob = escrow.getJob(firstJobId);
         AgentHubEscrow.Job memory secondJob = escrow.getJob(secondJobId);
@@ -527,36 +529,70 @@ contract AgentHubTest is Test {
     function test_RegisterProviderRevertsWhenAuthorizationExpired() public {
         uint256 expiresAt = block.timestamp + 1 hours;
         bytes memory signature = _signRegisterProvider(
-            ATTESTER_PK, providerOwner, providerPayout, 1_000e6, WORK_TIMEOUT, keccak256("provider metadata"), expiresAt
+            ATTESTER_PK,
+            providerOwner,
+            providerSigner,
+            providerPayout,
+            1_000e6,
+            WORK_TIMEOUT,
+            keccak256("provider metadata"),
+            expiresAt
         );
 
         vm.warp(expiresAt + 1);
         vm.prank(providerOwner);
         vm.expectRevert(AgentHubRegistry.AuthorizationExpired.selector);
-        registry.registerProvider(providerPayout, 1_000e6, WORK_TIMEOUT, keccak256("provider metadata"), expiresAt, signature);
+        registry.registerProvider(
+            providerSigner, providerPayout, 1_000e6, WORK_TIMEOUT, keccak256("provider metadata"), expiresAt, signature
+        );
     }
 
     function test_RegisterProviderRevertsWithWrongAttesterSignature() public {
         uint256 expiresAt = block.timestamp + 1 hours;
         bytes memory signature = _signRegisterProvider(
-            PROVIDER_OWNER_PK, providerOwner, providerPayout, 1_000e6, WORK_TIMEOUT, keccak256("provider metadata"), expiresAt
+            PROVIDER_OWNER_PK,
+            providerOwner,
+            providerSigner,
+            providerPayout,
+            1_000e6,
+            WORK_TIMEOUT,
+            keccak256("provider metadata"),
+            expiresAt
         );
 
         vm.prank(providerOwner);
         vm.expectRevert(AgentHubRegistry.InvalidSignature.selector);
-        registry.registerProvider(providerPayout, 1_000e6, WORK_TIMEOUT, keccak256("provider metadata"), expiresAt, signature);
+        registry.registerProvider(
+            providerSigner, providerPayout, 1_000e6, WORK_TIMEOUT, keccak256("provider metadata"), expiresAt, signature
+        );
     }
 
     function test_RegisterProviderRevertsWhenSignedForAnotherOwner() public {
         address otherOwner = address(0xBAD);
         uint256 expiresAt = block.timestamp + 1 hours;
         bytes memory signature = _signRegisterProvider(
-            ATTESTER_PK, otherOwner, providerPayout, 1_000e6, WORK_TIMEOUT, keccak256("provider metadata"), expiresAt
+            ATTESTER_PK,
+            otherOwner,
+            providerSigner,
+            providerPayout,
+            1_000e6,
+            WORK_TIMEOUT,
+            keccak256("provider metadata"),
+            expiresAt
         );
 
         vm.prank(providerOwner);
         vm.expectRevert(AgentHubRegistry.InvalidSignature.selector);
-        registry.registerProvider(providerPayout, 1_000e6, WORK_TIMEOUT, keccak256("provider metadata"), expiresAt, signature);
+        registry.registerProvider(
+            providerSigner, providerPayout, 1_000e6, WORK_TIMEOUT, keccak256("provider metadata"), expiresAt, signature
+        );
+    }
+
+    function test_RegisterProviderStoresDedicatedProviderSigner() public view {
+        IAgentHubRegistry.Provider memory provider = registry.getProvider(providerId);
+
+        assertEq(provider.signer, providerSigner);
+        assertTrue(provider.signer != attester);
     }
 
     function test_CreateJobRevertsWhenQueueTimeoutIsBelowOneMinute() public {
@@ -580,8 +616,7 @@ contract AgentHubTest is Test {
 
     function test_CreateJobRevertsWithWrongAttesterSignature() public {
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature =
-            _signCreateJob(PROVIDER_OWNER_PK, user, REQUEST_ID, keccak256("input"), expiresAt);
+        bytes memory signature = _signCreateJob(PROVIDER_OWNER_PK, user, REQUEST_ID, keccak256("input"), expiresAt);
 
         vm.prank(user);
         vm.expectRevert(AgentHubEscrow.InvalidSignature.selector);
@@ -591,8 +626,7 @@ contract AgentHubTest is Test {
     function test_CreateJobRevertsWhenSignedForAnotherUser() public {
         address otherUser = address(0xBAD);
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature =
-            _signCreateJob(ATTESTER_PK, otherUser, REQUEST_ID, keccak256("input"), expiresAt);
+        bytes memory signature = _signCreateJob(ATTESTER_PK, otherUser, REQUEST_ID, keccak256("input"), expiresAt);
 
         vm.prank(user);
         vm.expectRevert(AgentHubEscrow.InvalidSignature.selector);
@@ -604,8 +638,7 @@ contract AgentHubTest is Test {
 
         bytes32 otherInputCommitment = keccak256("other input");
         uint256 expiresAt = block.timestamp + 1 hours;
-        bytes memory signature =
-            _signCreateJob(ATTESTER_PK, user, REQUEST_ID, otherInputCommitment, expiresAt);
+        bytes memory signature = _signCreateJob(ATTESTER_PK, user, REQUEST_ID, otherInputCommitment, expiresAt);
 
         vm.prank(user);
         vm.expectRevert(AgentHubEscrow.RequestAlreadyUsed.selector);
@@ -637,10 +670,19 @@ contract AgentHubTest is Test {
         bytes32 metadataCommitment = keccak256("provider metadata");
         uint256 expiresAt = block.timestamp + 1 hours;
         bytes memory signature = _signRegisterProvider(
-            ATTESTER_PK, providerOwner, providerPayout, 1_000e6, WORK_TIMEOUT, metadataCommitment, expiresAt
+            ATTESTER_PK,
+            providerOwner,
+            providerSigner,
+            providerPayout,
+            1_000e6,
+            WORK_TIMEOUT,
+            metadataCommitment,
+            expiresAt
         );
 
-        return registry.registerProvider(providerPayout, 1_000e6, WORK_TIMEOUT, metadataCommitment, expiresAt, signature);
+        return registry.registerProvider(
+            providerSigner, providerPayout, 1_000e6, WORK_TIMEOUT, metadataCommitment, expiresAt, signature
+        );
     }
 
     function _createJob() private returns (uint256) {
@@ -654,7 +696,7 @@ contract AgentHubTest is Test {
     }
 
     function _startJob(uint256 jobId, uint256 expiresAt) private {
-        escrow.startJob(jobId, expiresAt, _signStartJob(ATTESTER_PK, jobId, expiresAt));
+        escrow.startJob(jobId, expiresAt, _signStartJob(PROVIDER_SIGNER_PK, jobId, expiresAt));
     }
 
     function _signStartJob(uint256 privateKey, uint256 jobId, uint256 expiresAt) private view returns (bytes memory) {
@@ -667,6 +709,7 @@ contract AgentHubTest is Test {
     function _signRegisterProvider(
         uint256 privateKey,
         address owner,
+        address signer,
         address payoutWallet,
         uint256 price,
         uint64 workTimeout,
@@ -677,6 +720,7 @@ contract AgentHubTest is Test {
             abi.encode(
                 registry.REGISTER_PROVIDER_AUTHORIZATION_TYPEHASH(),
                 owner,
+                signer,
                 payoutWallet,
                 price,
                 workTimeout,
@@ -717,12 +761,7 @@ contract AgentHubTest is Test {
     {
         bytes32 structHash = keccak256(
             abi.encode(
-                escrow.JOB_ACCEPTANCE_TYPEHASH(),
-                jobId,
-                providerId,
-                keccak256("input"),
-                outputCommitment,
-                expiresAt
+                escrow.JOB_ACCEPTANCE_TYPEHASH(), jobId, providerId, keccak256("input"), outputCommitment, expiresAt
             )
         );
         return _sign(USER_PK, _typedDataHash(structHash));
@@ -772,12 +811,7 @@ contract AgentHubTest is Test {
     {
         bytes32 structHash = keccak256(
             abi.encode(
-                escrow.NO_DELIVERY_ATTESTATION_TYPEHASH(),
-                jobId,
-                providerId,
-                keccak256("input"),
-                checkedAt,
-                expiresAt
+                escrow.NO_DELIVERY_ATTESTATION_TYPEHASH(), jobId, providerId, keccak256("input"), checkedAt, expiresAt
             )
         );
         return _sign(privateKey, _typedDataHash(structHash));

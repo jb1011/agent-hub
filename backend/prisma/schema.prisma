@@ -49,6 +49,7 @@ model Provider {
   description         String?
   status              ProviderStatus @default(REGISTERED)
   owner_wallet        String
+  signer_wallet       String
   payout_wallet       String
   api_base_url        String
   trust_level         TrustLevel     @default(UNVERIFIED)

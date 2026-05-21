@@ -32,6 +32,7 @@ export interface Provider {
   name: string;
   description: string | null;
   owner_wallet: string;
+  signer_wallet: string;
   payout_wallet: string;
   api_base_url: string;
   trust_level: ProviderTrustLevel;
@@ -51,6 +52,7 @@ export interface CreateProviderInput {
   name: string;
   description?: string;
   owner_wallet: string;
+  signer_wallet?: string;
   payout_wallet: string;
   api_base_url: string;
   trust_level?: ProviderTrustLevel;

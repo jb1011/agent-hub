@@ -18,7 +18,7 @@ contract AgentHubRegistry is IAgentHubRegistry, EIP712 {
     error InvalidSignature();
 
     bytes32 public constant REGISTER_PROVIDER_AUTHORIZATION_TYPEHASH = keccak256(
-        "RegisterProviderAuthorization(address owner,address payoutWallet,uint256 price,uint64 workTimeout,bytes32 metadataCommitment,uint256 expiresAt)"
+        "RegisterProviderAuthorization(address owner,address signer,address payoutWallet,uint256 price,uint64 workTimeout,bytes32 metadataCommitment,uint256 expiresAt)"
     );
 
     IAgentHubConfig private immutable CONFIG;
@@ -61,24 +61,21 @@ contract AgentHubRegistry is IAgentHubRegistry, EIP712 {
     }
 
     function registerProvider(
+        address signer,
         address payoutWallet,
         uint256 price,
         uint64 workTimeout,
         bytes32 metadataCommitment,
         uint256 expiresAt,
         bytes calldata registrationAttesterSignature
-    )
-        external
-        returns (uint256 providerId)
-    {
+    ) external returns (uint256 providerId) {
         if (block.timestamp > expiresAt) revert AuthorizationExpired();
-        address signer = CONFIG.deliveryAttester();
         if (signer == address(0) || payoutWallet == address(0)) revert ZeroAddress();
         if (price == 0) revert InvalidPrice();
         if (workTimeout == 0) revert InvalidTimeout();
 
         _requireRegisterProviderAuthorization(
-            payoutWallet, price, workTimeout, metadataCommitment, expiresAt, registrationAttesterSignature
+            signer, payoutWallet, price, workTimeout, metadataCommitment, expiresAt, registrationAttesterSignature
         );
 
         providerId = nextProviderId++;
@@ -156,6 +153,7 @@ contract AgentHubRegistry is IAgentHubRegistry, EIP712 {
     }
 
     function _requireRegisterProviderAuthorization(
+        address signer,
         address payoutWallet,
         uint256 price,
         uint64 workTimeout,
@@ -163,16 +161,20 @@ contract AgentHubRegistry is IAgentHubRegistry, EIP712 {
         uint256 expiresAt,
         bytes calldata registrationAttesterSignature
     ) private view {
-        bytes32 structHash =
-            _hashRegisterProviderAuthorization(msg.sender, payoutWallet, price, workTimeout, metadataCommitment, expiresAt);
-        if (ECDSA.recoverCalldata(_hashTypedDataV4(structHash), registrationAttesterSignature) != CONFIG.deliveryAttester())
-        {
+        bytes32 structHash = _hashRegisterProviderAuthorization(
+            msg.sender, signer, payoutWallet, price, workTimeout, metadataCommitment, expiresAt
+        );
+        if (
+            ECDSA.recoverCalldata(_hashTypedDataV4(structHash), registrationAttesterSignature)
+                != CONFIG.deliveryAttester()
+        ) {
             revert InvalidSignature();
         }
     }
 
     function _hashRegisterProviderAuthorization(
         address owner,
+        address signer,
         address payoutWallet,
         uint256 price,
         uint64 workTimeout,
@@ -184,13 +186,14 @@ contract AgentHubRegistry is IAgentHubRegistry, EIP712 {
             let ptr := mload(0x40)
             mstore(ptr, typeHash)
             mstore(add(ptr, 0x20), owner)
-            mstore(add(ptr, 0x40), payoutWallet)
-            mstore(add(ptr, 0x60), price)
-            mstore(add(ptr, 0x80), workTimeout)
-            mstore(add(ptr, 0xa0), metadataCommitment)
-            mstore(add(ptr, 0xc0), expiresAt)
-            mstore(0x40, add(ptr, 0xe0))
-            structHash := keccak256(ptr, 0xe0)
+            mstore(add(ptr, 0x40), signer)
+            mstore(add(ptr, 0x60), payoutWallet)
+            mstore(add(ptr, 0x80), price)
+            mstore(add(ptr, 0xa0), workTimeout)
+            mstore(add(ptr, 0xc0), metadataCommitment)
+            mstore(add(ptr, 0xe0), expiresAt)
+            mstore(0x40, add(ptr, 0x100))
+            structHash := keccak256(ptr, 0x100)
         }
     }
 }
