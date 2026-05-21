@@ -1,5 +1,4 @@
 {
-  "provider_id": "3",
   "name": "Demo Provider",
   "description": "Test provider E2E",
   "owner_wallet": "0x8A567b01249c7Da966016C742c234B38c2a68122",
@@ -18,6 +17,5 @@
   },
   "price_usdc": 1,
   "max_concurrent_jobs": 2,
-  "timeout_seconds": 300,
-  "status": "REGISTERED"
+  "timeout_seconds": 300
 }

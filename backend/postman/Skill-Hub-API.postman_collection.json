@@ -57,7 +57,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"provider_id\": \"{{providerId}}\",\n  \"name\": \"Demo Provider\",\n  \"description\": \"Optional description\",\n  \"owner_wallet\": \"0x0000000000000000000000000000000000000001\",\n  \"payout_wallet\": \"0x0000000000000000000000000000000000000002\",\n  \"api_base_url\": \"https://api.example.com\",\n  \"trust_level\": \"VERIFIED\",\n  \"service_type\": \"AI\",\n  \"input_schema\": { \"type\": \"object\" },\n  \"output_schema\": { \"type\": \"object\" },\n  \"price_usdc\": 1.5,\n  \"max_concurrent_jobs\": 2,\n  \"timeout_seconds\": 300,\n  \"status\": \"ACTIVE\"\n}"
+              "raw": "{\n  \"name\": \"Demo Provider\",\n  \"description\": \"Optional description\",\n  \"owner_wallet\": \"0x0000000000000000000000000000000000000001\",\n  \"payout_wallet\": \"0x0000000000000000000000000000000000000002\",\n  \"api_base_url\": \"https://api.example.com\",\n  \"trust_level\": \"VERIFIED\",\n  \"service_type\": \"AI\",\n  \"input_schema\": { \"type\": \"object\" },\n  \"output_schema\": { \"type\": \"object\" },\n  \"price_usdc\": 1.5,\n  \"max_concurrent_jobs\": 2,\n  \"timeout_seconds\": 300\n}"
             },
             "url": "{{baseUrl}}/providers"
           }
@@ -93,7 +93,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/jobs",
-            "description": "Optional query parameters: ?user_wallet=&provider_id=&status=."
+            "description": "Optional query parameters: ?user_wallet=&provider_request_id=&status=."
           }
         },
         {

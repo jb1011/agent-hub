@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Interface, getAddress, keccak256, parseUnits, toUtf8Bytes } from "ethers";
+import { signRegisterProviderAuthorization } from "./register-provider-authorization.js";
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
@@ -11,11 +12,12 @@ type Deployment = {
 };
 
 const AGENT_HUB_REGISTRY_INTERFACE = new Interface([
-  "function registerProvider(address signer, address payoutWallet, uint256 price, uint64 workTimeout, bytes32 metadataCommitment)",
+  "function registerProvider(address payoutWallet, uint256 price, uint64 workTimeout, bytes32 metadataCommitment, uint256 expiresAt, bytes registrationAttesterSignature)",
 ]);
 
 export type ProviderRegistryMetadata = {
-  provider_id: string;
+  request_id: string;
+  registry_provider_id: string | null;
   name: string;
   description: string | null;
   status: string;
@@ -28,7 +30,7 @@ export type ProviderRegistryMetadata = {
   output_schema: unknown;
   price_usdc: string | null;
   max_concurrent_jobs: number;
-  timeout_seconds: number | null;
+  timeout_seconds: number;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -68,21 +70,27 @@ export function agentHubRegistryChainId(): number | undefined {
   return parsed;
 }
 
-export function buildRegisterProviderCall(metadata: ProviderRegistryMetadata) {
+export async function buildRegisterProviderCall(metadata: ProviderRegistryMetadata) {
   if (metadata.price_usdc == null) {
     throw new Error("provider.price_usdc is required to build registerProvider args");
   }
-  if (metadata.timeout_seconds == null) {
-    throw new Error("provider.timeout_seconds is required to build registerProvider args");
-  }
-
   const registryAddress = agentHubRegistryAddress();
+  const commitment = computeProviderMetadataCommitment(metadata);
+  const authorization = await signRegisterProviderAuthorization({
+    ownerWallet: metadata.owner_wallet,
+    payoutWallet: metadata.payout_wallet,
+    priceUsdc: metadata.price_usdc,
+    workTimeoutSeconds: metadata.timeout_seconds,
+    metadataCommitment: commitment,
+  });
+
   const args = {
-    signer: getAddress(metadata.owner_wallet),
-    payout_wallet: getAddress(metadata.payout_wallet),
-    price: parseUsdc(metadata.price_usdc, "provider.price_usdc"),
-    work_timeout: asUint64(metadata.timeout_seconds, "provider.timeout_seconds"),
-    metadata_commitment: metadataCommitment(metadata as unknown as JsonValue),
+    payout_wallet: authorization.payout_wallet,
+    price: authorization.price,
+    work_timeout: authorization.work_timeout,
+    metadata_commitment: authorization.metadata_commitment,
+    expires_at: authorization.expires_at,
+    registration_attester_signature: authorization.registration_attester_signature,
   };
 
   return {
@@ -92,8 +100,15 @@ export function buildRegisterProviderCall(metadata: ProviderRegistryMetadata) {
     transaction: buildPreparedTransaction(
       registryAddress,
       "registerProvider",
-      [args.signer, args.payout_wallet, args.price, args.work_timeout, args.metadata_commitment],
-      args.signer
+      [
+        args.payout_wallet,
+        args.price,
+        args.work_timeout,
+        args.metadata_commitment,
+        args.expires_at,
+        args.registration_attester_signature,
+      ],
+      authorization.owner_wallet
     ),
   };
 }
@@ -130,6 +145,14 @@ function stableStringify(value: JsonValue): string {
 
   const keys = Object.keys(value).sort();
   return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+}
+
+export function computeProviderMetadataCommitment(
+  metadata: ProviderRegistryMetadata | Omit<ProviderRegistryMetadata, "registry_provider_id">
+): string {
+  const { registry_provider_id: _registryProviderId, ...commitmentMetadata } =
+    metadata as ProviderRegistryMetadata;
+  return metadataCommitment(commitmentMetadata as unknown as JsonValue);
 }
 
 function metadataCommitment(metadata: JsonValue): string {

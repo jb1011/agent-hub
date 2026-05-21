@@ -11,7 +11,8 @@ function dt(d: Date | null | undefined): string | null {
 
 export function serializeProvider(p: Provider) {
   return {
-    provider_id: p.provider_id,
+    request_id: p.request_id,
+    registry_provider_id: p.registry_provider_id,
     name: p.name,
     description: p.description,
     status: p.status,
@@ -35,7 +36,7 @@ export function serializeJob(j: Job) {
     request_id: j.request_id,
     job_id: j.job_id,
     user_wallet: j.user_wallet,
-    provider_id: j.provider_id,
+    provider_request_id: j.provider_request_id,
     status: j.status,
     input: j.input,
     input_hash: j.input_hash,

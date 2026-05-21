@@ -158,7 +158,7 @@ $ npm run settle-with-user-signature -- --file args/settle-with-user-signature-a
 
 ### Register Provider
 
-Provider registration now happens through the backend `/providers` endpoint, which returns a prepared `registerProvider` transaction. The provider metadata includes `service_type`, schemas, `price_usdc`, `max_concurrent_jobs`, and `timeout_seconds`.
+Provider registration happens through the backend `/providers` endpoint, which signs a `RegisterProviderAuthorization` (EIP-712, same `deliveryAttester` as `createJob`) and returns a prepared `registerProvider` transaction with `expires_at` and `registration_attester_signature`.
 
 ### Sign And Send Transaction
 

@@ -1,5 +1,6 @@
 {
-  "provider_id": "1",
+  "request_id": "0x0000000000000000000000000000000000000000000000000000000000000001",
+  "registry_provider_id": "1",
   "name": "Agent Hub Demo Provider",
   "description": "Demo provider for Agent Hub registration.",
   "status": "ACTIVE",

@@ -27,7 +27,8 @@ export type ProviderTrustLevel = "UNVERIFIED" | "VERIFIED" | "CERTIFIED" | "HOST
 export type ProviderStatus = "REGISTERED" | "ACTIVE" | "SUSPENDED";
 
 export interface Provider {
-  provider_id: string;
+  request_id: string;
+  registry_provider_id: string | null;
   name: string;
   description: string | null;
   owner_wallet: string;
@@ -39,14 +40,14 @@ export interface Provider {
   output_schema: unknown;
   price_usdc: string;
   max_concurrent_jobs: number;
-  timeout_seconds: number | null;
+  timeout_seconds: number;
   status: ProviderStatus;
   created_at: string;
   updated_at: string;
 }
 
 export interface CreateProviderInput {
-  provider_id: string;
+  registry_provider_id?: string;
   name: string;
   description?: string;
   owner_wallet: string;
@@ -59,10 +60,14 @@ export interface CreateProviderInput {
   price_usdc: number;
   max_concurrent_jobs: number;
   timeout_seconds?: number;
-  status?: ProviderStatus;
 }
 
-export type UpdateProviderInput = Partial<Omit<CreateProviderInput, "provider_id">>;
+export type UpdateProviderInput = Partial<CreateProviderInput>;
+
+export interface CreateProviderResult {
+  request_id: string;
+  transaction: PreparedContractTransaction;
+}
 
 // ---------------------------------------------------------------------------
 // Jobs
@@ -76,7 +81,7 @@ export interface Job {
   request_id: string;
   job_id: string | null;
   user_wallet: string;
-  provider_id: string;
+  provider_request_id: string;
   status: JobStatus;
   input: unknown | null;
   input_hash: string | null;
@@ -102,7 +107,8 @@ export interface Job {
 export interface JobWithDetails extends Job {
   escrow: Escrow | null;
   provider: {
-    provider_id: string;
+    request_id: string;
+    registry_provider_id: string | null;
     name: string;
     price_usdc: string;
   };
@@ -129,7 +135,7 @@ export interface ListJobsQuery {
   request_id?: string;
   job_id?: string;
   user_wallet?: string;
-  provider_id?: string;
+  provider_request_id?: string;
   status?: JobStatus;
 }
 

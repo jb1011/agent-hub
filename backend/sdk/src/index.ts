@@ -8,6 +8,7 @@ export type {
   ProviderTrustLevel,
   ProviderStatus,
   CreateProviderInput,
+  CreateProviderResult,
   UpdateProviderInput,
   // Jobs
   Job,

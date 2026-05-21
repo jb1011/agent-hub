@@ -86,7 +86,7 @@ const jobResponseSchema = z.object({
   request_id: z.string(),
   job_id: z.string().nullable(),
   user_wallet: z.string(),
-  provider_id: z.string(),
+  provider_request_id: z.string(),
   status: z.string(),
   input: z.unknown().nullable(),
   input_hash: z.string().nullable(),
@@ -121,7 +121,7 @@ const listQuerySchema = z.object({
   request_id: z.string().optional(),
   job_id: z.string().optional(),
   user_wallet: z.string().optional(),
-  provider_id: uint256StringSchema("provider_id").optional(),
+  provider_request_id: z.string().refine(isBytes32, "provider_request_id must be bytes32").optional(),
   status: z.enum(JOB_STATUS).optional(),
 });
 
@@ -156,10 +156,10 @@ async function getJobWithProvider(id: string) {
   });
 }
 
-async function runningCapacityForProvider(providerId: string) {
+async function runningCapacityForProvider(providerRequestId: string) {
   return prisma.job.count({
     where: {
-      provider_id: providerId,
+      provider_request_id: providerRequestId,
       status: { in: CAPACITY_JOB_STATUSES },
     },
   });
@@ -173,7 +173,7 @@ async function ensureStartable(job: Awaited<ReturnType<typeof getJobWithProvider
   if (job.queue_deadline && job.queue_deadline.getTime() <= Date.now()) {
     return "queue_deadline_expired";
   }
-  const activeJobs = await runningCapacityForProvider(job.provider_id);
+  const activeJobs = await runningCapacityForProvider(job.provider_request_id);
   if (activeJobs >= job.provider.max_concurrent_jobs) return "provider_capacity_exceeded";
   return null;
 }
@@ -182,9 +182,12 @@ function ensureOnchainJob(job: Awaited<ReturnType<typeof getJobWithProvider>>) {
   if (!job) throw new CreateJobAuthorizationError("job_not_found", 404);
   if (!job.job_id) throw new CreateJobAuthorizationError("job_not_funded_onchain", 409);
   if (!job.input_hash) throw new CreateJobAuthorizationError("input_commitment_missing", 409);
+  if (!job.provider.registry_provider_id) {
+    throw new CreateJobAuthorizationError("provider_registry_id_missing", 409);
+  }
   return {
     jobId: job.job_id,
-    providerId: job.provider_id,
+    providerId: job.provider.registry_provider_id,
     inputCommitment: job.input_hash,
   };
 }
@@ -605,7 +608,9 @@ export async function jobsRoutes(app: FastifyInstance) {
           ...(query.data.request_id ? { request_id: query.data.request_id } : {}),
           ...(query.data.job_id ? { job_id: query.data.job_id } : {}),
           ...(query.data.user_wallet ? { user_wallet: query.data.user_wallet } : {}),
-          ...(query.data.provider_id ? { provider_id: query.data.provider_id } : {}),
+          ...(query.data.provider_request_id
+            ? { provider_request_id: query.data.provider_request_id }
+            : {}),
           ...(query.data.status ? { status: query.data.status } : {}),
         }
       : {};
@@ -625,7 +630,8 @@ export async function jobsRoutes(app: FastifyInstance) {
         200: jobResponseSchema.extend({
           escrow: z.unknown().nullable(),
           provider: z.object({
-            provider_id: z.string(),
+            request_id: z.string(),
+            registry_provider_id: z.string().nullable(),
             name: z.string(),
             price_usdc: z.string(),
           }),
@@ -643,7 +649,8 @@ export async function jobsRoutes(app: FastifyInstance) {
       ...serializeJob(job),
       escrow: job.escrow ? serializeEscrow(job.escrow) : null,
       provider: {
-        provider_id: job.provider.provider_id,
+        request_id: job.provider.request_id,
+        registry_provider_id: job.provider.registry_provider_id,
         name: job.provider.name,
         price_usdc: job.provider.price_usdc.toString(),
       },
@@ -667,9 +674,12 @@ export async function jobsRoutes(app: FastifyInstance) {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const provider = await prisma.provider.findUnique({
-      where: { provider_id: parsed.data.provider_id }
+      where: { registry_provider_id: parsed.data.provider_id },
     });
     if (!provider) return notFound(reply, "provider_not_found");
+    if (!provider.registry_provider_id) {
+      return reply.status(400).send({ error: "provider_registry_id_missing" });
+    }
 
     if (parsed.data.request_id) {
       const existing = await prisma.job.findUnique({
@@ -681,7 +691,7 @@ export async function jobsRoutes(app: FastifyInstance) {
     try {
       const authorization = await signCreateJobAuthorization({
         userWallet: parsed.data.user_wallet,
-        providerId: provider.provider_id,
+        providerId: provider.registry_provider_id,
         priceUsdc: provider.price_usdc.toString(),
         workTimeoutSeconds: provider.timeout_seconds,
         requestId: parsed.data.request_id,
@@ -697,7 +707,7 @@ export async function jobsRoutes(app: FastifyInstance) {
         data: {
           request_id: authorization.request_id,
           user_wallet: authorization.user_wallet,
-          provider_id: parsed.data.provider_id,
+          provider_request_id: provider.request_id,
           input: parsed.data.input === undefined ? undefined : (parsed.data.input as Prisma.InputJsonValue),
           input_hash: authorization.input_commitment,
           work_deadline: parsed.data.work_deadline

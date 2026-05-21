@@ -14,8 +14,6 @@ import type {
   AcceptanceRequestResult,
   AcceptanceInput,
   AcceptanceResult,
-  SettleWithUserSignatureInput,
-  SettleWithUserSignatureResult,
   RefundAfterQueueTimeoutResult,
   RefundAfterFinalTimeoutResult,
 } from "./types.js";
@@ -36,7 +34,7 @@ export class JobsResource {
     if (query?.request_id) params.set("request_id", query.request_id);
     if (query?.job_id) params.set("job_id", query.job_id);
     if (query?.user_wallet) params.set("user_wallet", query.user_wallet);
-    if (query?.provider_id) params.set("provider_id", query.provider_id);
+    if (query?.provider_request_id) params.set("provider_request_id", query.provider_request_id);
     if (query?.status) params.set("status", query.status);
     const qs = params.size > 0 ? `?${params}` : "";
     return this.request<Job[]>(`/jobs${qs}`);
@@ -129,16 +127,6 @@ export class JobsResource {
       method: "POST",
       body: JSON.stringify(input),
     });
-  }
-
-  /**
-   * @deprecated Use acceptance(). This method calls POST /jobs/:id/acceptance.
-   */
-  settleWithUserSignature(
-    id: string,
-    input: SettleWithUserSignatureInput
-  ): Promise<SettleWithUserSignatureResult> {
-    return this.acceptance(id, input);
   }
 
   /**

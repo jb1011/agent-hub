@@ -58,7 +58,7 @@ async function run() {
       const jobs = await client.jobs.list(status ? { status } : undefined);
       console.log(`Found ${jobs.length} job(s):\n`);
       for (const j of jobs) {
-        console.log(`  [${j.request_id}] job_id=${j.job_id ?? "—"}  status=${j.status}  provider=${j.provider_id}`);
+        console.log(`  [${j.request_id}] job_id=${j.job_id ?? "—"}  status=${j.status}  provider=${j.provider_request_id}`);
       }
       break;
     }

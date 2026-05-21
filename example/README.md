@@ -20,7 +20,9 @@ Dans un autre terminal, lance le backend :
 npm run dev --prefix backend
 ```
 
-Pour `register:provider`, le backend doit aussi connaître le registry contract via `AGENT_HUB_REGISTRY_ADDRESS`, ou via `AGENT_HUB_CHAIN_ID` / `ESCROW_CHAIN_ID` avec un fichier de déploiement disponible.
+Pour `register:provider`, le backend doit connaître le registry contract via `AGENT_HUB_REGISTRY_ADDRESS`, ou via `AGENT_HUB_CHAIN_ID` / `ESCROW_CHAIN_ID` avec un fichier de déploiement disponible. Il doit aussi pouvoir signer l'autorisation EIP-712 `RegisterProviderAuthorization` avec `DELIVERY_ATTESTER_PRIVATE_KEY` (même adresse que `AgentHubConfig.deliveryAttester()` on-chain).
+
+Pour lier automatiquement le `registry_provider_id` après `registerProvider`, lance le backend avec `ARC_RPC_WS_URL` (listener `ProviderRegistered`). Sans websocket, tu peux toujours renseigner `registry_provider_id` à la main via `PATCH /providers/:request_id`.
 
 Si tu veux que l'exemple signe et envoie les transactions, renseigne aussi `RPC_URL` et `SIGNER_WALLET_PK` dans `example/.env`. La clé doit correspondre au signer attendu par la transaction : `owner_wallet` pour register provider, `user_wallet` pour create job.
 
@@ -62,24 +64,25 @@ example/scripts/
 
 Les scripts chargent automatiquement `example/.env` quand ils sont lancés via `npm --prefix example`.
 
-Tu peux ensuite exécuter :
+## Identifiants provider
 
-```bash
-npm run register:provider --prefix example
-npm run create:job --prefix example
-npm run start:job --prefix example
-npm run accept:job --prefix example
-npm run refund:queue --prefix example -- <jobId>
-npm run refund:final --prefix example -- <jobId>
-```
+L'API distingue deux identifiants :
+
+| Champ | Format | Usage |
+|-------|--------|-------|
+| `request_id` | `bytes32` (ex. `0xabc…`) | Clé API : `GET/PATCH/DELETE /providers/:id`, retourné par `POST /providers` |
+| `registry_provider_id` | entier décimal (ex. `"1"`) | ID on-chain dans `AgentHubRegistry` ; requis pour `POST /jobs` (`provider_id` dans le body) |
+
+Le `request_id` est généré par l'API à la création. Le `registry_provider_id` est rempli après l'événement `ProviderRegistered` (listener backend) une fois `registerProvider` confirmé on-chain.
 
 ## Register un provider
+
+`example/config/provider.json` ne contient plus de `provider_id` : l'API génère un `request_id` bytes32.
 
 `scripts/register-provider.ts` appelle :
 
 ```ts
-client.providers.create({
-  provider_id,
+const result = await client.providers.create({
   name,
   description,
   owner_wallet,
@@ -92,31 +95,34 @@ client.providers.create({
   price_usdc,
   max_concurrent_jobs,
   timeout_seconds,
-  status,
 });
+
+// result.request_id  → identifiant API (bytes32)
+// result.transaction → registerProvider(payoutWallet, price, workTimeout, metadataCommitment, expiresAt, registrationAttesterSignature)
 ```
 
-L'API retourne une transaction préparée pour `AgentHubRegistry.registerProvider`. Si `SIGNER_WALLET_PK` et `RPC_URL` sont présents, le script signe et broadcast la transaction avec ethers. Sinon, il affiche seulement la transaction préparée.
+L'API crée le provider en base avec `status: REGISTERED`, calcule un `metadataCommitment` à partir des métadonnées, signe l'autorisation EIP-712 côté serveur, puis retourne la transaction `registerProvider`. Le `msg.sender` on-chain doit être `owner_wallet`. Si `SIGNER_WALLET_PK` et `RPC_URL` sont présents, le script signe et broadcast la transaction avec ethers. Sinon, il affiche seulement la transaction préparée.
+
+Après confirmation on-chain, le listener remplit `registry_provider_id` et passe le provider en `ACTIVE`. Le script attend ce lien quand la transaction a été envoyée ; sinon récupère-le via `npm run providers:list --prefix example` et mets-le dans `example/config/job.json` sous `provider_id`.
 
 ## Create un job
 
-`scripts/create-job.ts` lit `example/config/job.json`, puis appelle :
+`scripts/create-job.ts` lit `example/config/job.json`. Le champ `provider_id` est le **`registry_provider_id`** on-chain (pas le `request_id` API).
 
 ```ts
-client.jobs.create(job);
+const transaction = await client.jobs.create(job);
 ```
 
-Le provider référencé par `provider_id` doit déjà exister côté API. L'API retourne une transaction préparée pour `AgentHubEscrow.createJob`.
+Le provider doit exister côté API **et** avoir un `registry_provider_id` renseigné (enregistrement on-chain terminé). L'API retourne une transaction préparée pour `AgentHubEscrow.createJob`.
 
 Si `SIGNER_WALLET_PK` et `RPC_URL` sont présents, le script :
 
-1. récupère le prix du provider avec `client.providers.get(provider_id)`,
-2. lit `paymentToken()` sur le contrat escrow,
-3. vérifie `allowance(user_wallet, escrow)`,
-4. envoie `approve(escrow, price_usdc)` si l'allowance est insuffisante,
-5. signe et broadcast `createJob`.
+1. lit le prix du provider on-chain via `AgentHubRegistry.getProvider(provider_id)`,
+2. vérifie `allowance(user_wallet, escrow)`,
+3. envoie `approve(escrow, price)` si l'allowance est insuffisante,
+4. signe et broadcast `createJob`.
 
-Sinon, il affiche seulement la transaction préparée.
+Sinon, il affiche seulement la transaction préparée (pense à approuver le token de paiement manuellement avant d'envoyer `createJob`).
 
 ## Start un job
 

@@ -3,11 +3,15 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+const DEMO_REQUEST_ID =
+  "0x0000000000000000000000000000000000000000000000000000000000000001";
+
 async function main() {
   const provider = await prisma.provider.upsert({
-    where: { provider_id: "1" },
+    where: { request_id: DEMO_REQUEST_ID },
     create: {
-      provider_id: "1",
+      request_id: DEMO_REQUEST_ID,
+      registry_provider_id: "1",
       name: "Demo Provider",
       description: "A demo provider for development",
       owner_wallet: "0x0000000000000000000000000000000000000001",
@@ -24,7 +28,7 @@ async function main() {
   });
 
   console.log("Seeded:", {
-    provider: { id: provider.provider_id, name: provider.name },
+    provider: { request_id: provider.request_id, name: provider.name },
   });
 }
 

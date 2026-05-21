@@ -16,6 +16,7 @@ import {
   startReviewTimeoutSettlementWorker,
 } from "./routes/jobs.js";
 import { startEscrowJobCreatedListener } from "./listeners/escrow-job-created.js";
+import { startRegistryProviderRegisteredListener } from "./listeners/registry-provider-registered.js";
 
 const app = Fastify({ logger: true });
 
@@ -58,6 +59,13 @@ const escrowJobCreatedListener = startEscrowJobCreatedListener(app.log);
 if (escrowJobCreatedListener) {
   app.addHook("onClose", async () => {
     await escrowJobCreatedListener.close();
+  });
+}
+
+const registryProviderRegisteredListener = startRegistryProviderRegisteredListener(app.log);
+if (registryProviderRegisteredListener) {
+  app.addHook("onClose", async () => {
+    await registryProviderRegisteredListener.close();
   });
 }
 

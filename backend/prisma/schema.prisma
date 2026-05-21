@@ -42,7 +42,9 @@ enum EscrowStatus {
 }
 
 model Provider {
-  provider_id         String         @id
+  request_id            String         @id
+  registry_provider_id  String?        @unique
+  metadata_commitment   String?
   name                String
   description         String?
   status              ProviderStatus @default(REGISTERED)
@@ -63,14 +65,15 @@ model Provider {
 
   @@index([status])
   @@index([owner_wallet])
+  @@index([owner_wallet, metadata_commitment])
 }
 
 model Job {
   request_id            String    @id @default(cuid())
   job_id                String?   @unique
   user_wallet           String
-  provider_id           String
-  provider              Provider  @relation(fields: [provider_id], references: [provider_id], onDelete: Restrict)
+  provider_request_id   String
+  provider              Provider  @relation(fields: [provider_request_id], references: [request_id], onDelete: Restrict)
   status                JobStatus @default(CREATED)
   input                 Json?
   input_hash            String?
@@ -95,7 +98,7 @@ model Job {
   escrow Escrow?
 
   @@index([user_wallet, status])
-  @@index([provider_id])
+  @@index([provider_request_id])
 }
 
 model Escrow {

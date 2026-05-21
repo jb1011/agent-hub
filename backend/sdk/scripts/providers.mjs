@@ -6,15 +6,15 @@
  *
  * Commands:
  *   list
- *   get        <provider_id>
- *   create     <provider_id> <name> <owner_wallet> <payout_wallet> <api_base_url> <service_type> <price_usdc>
- *   update     <provider_id> <json_patch>
+ *   get        <request_id>
+ *   create     <name> <owner_wallet> <payout_wallet> <api_base_url> <service_type> <price_usdc>
+ *   update     <request_id> <json_patch>
  *
  * Examples:
  *   node scripts/providers.mjs list
- *   node scripts/providers.mjs get 123
- *   node scripts/providers.mjs create 42 "My Agent" 0xabc 0xabc https://my-agent.xyz text_generation 1
- *   node scripts/providers.mjs update 42 '{"status":"ACTIVE"}'
+ *   node scripts/providers.mjs get 0xabc...
+ *   node scripts/providers.mjs create "My Agent" 0xabc 0xabc https://my-agent.xyz text_generation 1
+ *   node scripts/providers.mjs update 0xabc... '{"status":"ACTIVE"}'
  */
 
 import { SkillHubClient } from "../dist/index.js";
@@ -29,9 +29,9 @@ function usage() {
 Usage: node scripts/providers.mjs <command> [args]
 
   list
-  get        <provider_id>
-  create     <provider_id> <name> <owner_wallet> <payout_wallet> <api_base_url> <service_type> <price_usdc>
-  update     <provider_id> <json_patch>
+  get        <request_id>
+  create     <name> <owner_wallet> <payout_wallet> <api_base_url> <service_type> <price_usdc>
+  update     <request_id> <json_patch>
 `);
   process.exit(1);
 }
@@ -42,7 +42,7 @@ async function run() {
       const providers = await client.providers.list();
       console.log(`Found ${providers.length} provider(s):\n`);
       for (const p of providers) {
-        console.log(`  [${p.provider_id}] ${p.name}  status=${p.status}  trust=${p.trust_level}`);
+        console.log(`  [${p.request_id}] ${p.name}  status=${p.status}  trust=${p.trust_level}`);
       }
       break;
     }
@@ -57,12 +57,11 @@ async function run() {
     }
 
     case "create": {
-      const [provider_id, name, owner_wallet, payout_wallet, api_base_url, service_type, price_usdc] = args;
-      if (!provider_id || !name || !owner_wallet || !payout_wallet || !api_base_url || !service_type || !price_usdc) {
+      const [name, owner_wallet, payout_wallet, api_base_url, service_type, price_usdc] = args;
+      if (!name || !owner_wallet || !payout_wallet || !api_base_url || !service_type || !price_usdc) {
         usage();
       }
       const created = await client.providers.create({
-        provider_id,
         name,
         owner_wallet,
         payout_wallet,
@@ -72,7 +71,7 @@ async function run() {
         max_concurrent_jobs: 1,
         timeout_seconds: 300,
       });
-      console.log("\nCreate provider transaction:");
+      console.log("\nCreate provider result:");
       console.log(JSON.stringify(created, null, 2));
       break;
     }

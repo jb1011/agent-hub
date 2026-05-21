@@ -83,7 +83,7 @@ npm run db:studio    # open Prisma Studio
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/jobs?user_wallet=&provider_id=&status=` | List jobs (filterable) |
+| `GET` | `/jobs?user_wallet=&provider_request_id=&status=` | List jobs (filterable) |
 | `GET` | `/jobs/:id` | Get job + escrow + provider |
 | `POST` | `/jobs` | Create job (`CREATED`) |
 | `PATCH` | `/jobs/:id/status` | Transition job status |

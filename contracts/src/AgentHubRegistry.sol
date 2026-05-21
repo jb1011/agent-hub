@@ -1,16 +1,25 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+
 import {IAgentHubConfig} from "./interfaces/IAgentHubConfig.sol";
 import {IAgentHubRegistry} from "./interfaces/IAgentHubRegistry.sol";
 
-contract AgentHubRegistry is IAgentHubRegistry {
+contract AgentHubRegistry is IAgentHubRegistry, EIP712 {
     error NotAdmin();
     error NotProviderOwnerOrAdmin();
     error ZeroAddress();
     error InvalidProvider();
     error InvalidPrice();
     error InvalidTimeout();
+    error AuthorizationExpired();
+    error InvalidSignature();
+
+    bytes32 public constant REGISTER_PROVIDER_AUTHORIZATION_TYPEHASH = keccak256(
+        "RegisterProviderAuthorization(address owner,address payoutWallet,uint256 price,uint64 workTimeout,bytes32 metadataCommitment,uint256 expiresAt)"
+    );
 
     IAgentHubConfig private immutable CONFIG;
     uint256 public nextProviderId = 1;
@@ -27,7 +36,6 @@ contract AgentHubRegistry is IAgentHubRegistry {
         bytes32 metadataCommitment
     );
     event ProviderMetadataUpdated(uint256 indexed providerId, bytes32 metadataCommitment);
-    event ProviderSignerUpdated(uint256 indexed providerId, address indexed signer);
     event ProviderPayoutWalletUpdated(uint256 indexed providerId, address indexed payoutWallet);
     event ProviderPriceUpdated(uint256 indexed providerId, uint256 price);
     event ProviderWorkTimeoutUpdated(uint256 indexed providerId, uint64 workTimeout);
@@ -39,7 +47,7 @@ contract AgentHubRegistry is IAgentHubRegistry {
         _;
     }
 
-    constructor(address config_) {
+    constructor(address config_) EIP712("AgentHubRegistry", "1") {
         if (config_ == address(0)) revert ZeroAddress();
         CONFIG = IAgentHubConfig(config_);
     }
@@ -48,19 +56,30 @@ contract AgentHubRegistry is IAgentHubRegistry {
         return CONFIG;
     }
 
+    function domainSeparator() public view returns (bytes32) {
+        return _domainSeparatorV4();
+    }
+
     function registerProvider(
-        address signer,
         address payoutWallet,
         uint256 price,
         uint64 workTimeout,
-        bytes32 metadataCommitment
+        bytes32 metadataCommitment,
+        uint256 expiresAt,
+        bytes calldata registrationAttesterSignature
     )
         external
         returns (uint256 providerId)
     {
+        if (block.timestamp > expiresAt) revert AuthorizationExpired();
+        address signer = CONFIG.deliveryAttester();
         if (signer == address(0) || payoutWallet == address(0)) revert ZeroAddress();
         if (price == 0) revert InvalidPrice();
         if (workTimeout == 0) revert InvalidTimeout();
+
+        _requireRegisterProviderAuthorization(
+            payoutWallet, price, workTimeout, metadataCommitment, expiresAt, registrationAttesterSignature
+        );
 
         providerId = nextProviderId++;
         _providers[providerId] = Provider({
@@ -82,14 +101,6 @@ contract AgentHubRegistry is IAgentHubRegistry {
         _requireProviderOwnerOrAdmin(provider);
         provider.metadataCommitment = metadataCommitment;
         emit ProviderMetadataUpdated(providerId, metadataCommitment);
-    }
-
-    function updateProviderSigner(uint256 providerId, address signer) external {
-        if (signer == address(0)) revert ZeroAddress();
-        Provider storage provider = _existingProvider(providerId);
-        _requireProviderOwnerOrAdmin(provider);
-        provider.signer = signer;
-        emit ProviderSignerUpdated(providerId, signer);
     }
 
     function updateProviderPayoutWallet(uint256 providerId, address payoutWallet) external {
@@ -142,5 +153,44 @@ contract AgentHubRegistry is IAgentHubRegistry {
 
     function _requireProviderOwnerOrAdmin(Provider storage provider) private view {
         if (msg.sender != provider.owner && msg.sender != CONFIG.owner()) revert NotProviderOwnerOrAdmin();
+    }
+
+    function _requireRegisterProviderAuthorization(
+        address payoutWallet,
+        uint256 price,
+        uint64 workTimeout,
+        bytes32 metadataCommitment,
+        uint256 expiresAt,
+        bytes calldata registrationAttesterSignature
+    ) private view {
+        bytes32 structHash =
+            _hashRegisterProviderAuthorization(msg.sender, payoutWallet, price, workTimeout, metadataCommitment, expiresAt);
+        if (ECDSA.recoverCalldata(_hashTypedDataV4(structHash), registrationAttesterSignature) != CONFIG.deliveryAttester())
+        {
+            revert InvalidSignature();
+        }
+    }
+
+    function _hashRegisterProviderAuthorization(
+        address owner,
+        address payoutWallet,
+        uint256 price,
+        uint64 workTimeout,
+        bytes32 metadataCommitment,
+        uint256 expiresAt
+    ) private pure returns (bytes32 structHash) {
+        bytes32 typeHash = REGISTER_PROVIDER_AUTHORIZATION_TYPEHASH;
+        assembly ("memory-safe") {
+            let ptr := mload(0x40)
+            mstore(ptr, typeHash)
+            mstore(add(ptr, 0x20), owner)
+            mstore(add(ptr, 0x40), payoutWallet)
+            mstore(add(ptr, 0x60), price)
+            mstore(add(ptr, 0x80), workTimeout)
+            mstore(add(ptr, 0xa0), metadataCommitment)
+            mstore(add(ptr, 0xc0), expiresAt)
+            mstore(0x40, add(ptr, 0xe0))
+            structHash := keccak256(ptr, 0xe0)
+        }
     }
 }
