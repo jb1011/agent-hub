@@ -24,6 +24,7 @@ import {
   buildRefundAfterFinalTimeoutTransaction,
   buildRefundAfterQueueTimeoutTransaction,
 } from "../lib/escrow-transaction.js";
+import { logProviderJobPayload } from "../lib/log-job-payload.js";
 import { uint256StringSchema } from "../lib/uint256.js";
 
 const JOB_STATUS = [
@@ -618,7 +619,18 @@ export async function jobsRoutes(app: FastifyInstance) {
       where,
       orderBy: { created_at: "desc" },
     });
-    return reply.send(jobs.map(serializeJob));
+    const serialized = jobs.map(serializeJob);
+    for (const job of serialized) {
+      logProviderJobPayload(req.log, "jobs_list", {
+        request_id: job.request_id,
+        job_id: job.job_id,
+        status: job.status,
+        provider_request_id: job.provider_request_id,
+        input: job.input,
+        input_hash: job.input_hash,
+      }, { query: query.data });
+    }
+    return reply.send(serialized);
   });
 
   app.get<{ Params: { id: string } }>("/jobs/:id", {
@@ -645,7 +657,7 @@ export async function jobsRoutes(app: FastifyInstance) {
       include: { escrow: true, provider: true },
     });
     if (!job) return notFound(reply);
-    return reply.send({
+    const body = {
       ...serializeJob(job),
       escrow: job.escrow ? serializeEscrow(job.escrow) : null,
       provider: {
@@ -654,7 +666,16 @@ export async function jobsRoutes(app: FastifyInstance) {
         name: job.provider.name,
         price_usdc: job.provider.price_usdc.toString(),
       },
+    };
+    logProviderJobPayload(req.log, "jobs_get", {
+      request_id: body.request_id,
+      job_id: body.job_id,
+      status: body.status,
+      provider_request_id: body.provider_request_id,
+      input: body.input,
+      input_hash: body.input_hash,
     });
+    return reply.send(body);
   });
 
   app.post("/jobs", {
@@ -833,13 +854,25 @@ export async function jobsRoutes(app: FastifyInstance) {
         });
       }
 
-      return reply.send({
+      const responseBody = {
         input: job!.input,
         transaction_hash: relayed.transaction_hash,
         relayer_address: relayed.relayer_address,
         block_number: relayed.block_number,
         gas_used: relayed.gas_used,
+      };
+      logProviderJobPayload(req.log, "start_job_response", {
+        request_id: job!.request_id,
+        job_id: job!.job_id,
+        status: job!.status,
+        provider_request_id: job!.provider_request_id,
+        input: job!.input,
+        input_hash: job!.input_hash,
+      }, {
+        transaction_hash: responseBody.transaction_hash,
+        relayer_address: responseBody.relayer_address,
       });
+      return reply.send(responseBody);
     } catch (err) {
       if (err instanceof CreateJobAuthorizationError) {
         return reply.status(err.statusCode as 400 | 404 | 409 | 500).send({ error: err.message });

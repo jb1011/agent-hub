@@ -16,7 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ServiceGrid } from "./components/ServiceGrid";
 import { RegisterBox } from "./components/RegisterBox";
 import NavMenu from "./components/NavMenu";
-import { fetchServices, fetchProviders, apiKeys } from "./lib/api";
+import { fetchProviders, apiKeys } from "./lib/api";
 
 const GRID = "rgba(0,0,0,0.12)";
 
@@ -86,21 +86,12 @@ export default function HomePage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const { data: services = [] } = useQuery({
-    queryKey: apiKeys.services,
-    queryFn: fetchServices,
-  });
-
   const { data: providers = [] } = useQuery({
     queryKey: apiKeys.providers,
     queryFn: fetchProviders,
   });
 
   const liveStats = [
-    {
-      label: "Agents",
-      value: services.length > 0 ? `${services.length}` : "—",
-    },
     {
       label: "Providers",
       value: providers.length > 0 ? `${providers.length}` : "—",
@@ -500,8 +491,8 @@ export default function HomePage() {
         >
           {[
             {
-              value: services.length > 0 ? `${services.length}+` : "—",
-              label: "Active Agents",
+              value: providers.length > 0 ? `${providers.length}+` : "—",
+              label: "Active Providers",
             },
             { value: "$0", label: "Listing Fee" },
             { value: "USDC", label: "Instant Payouts", orange: true },

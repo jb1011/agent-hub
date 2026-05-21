@@ -1,17 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Star } from "lucide-react";
-import { fetchServices, fetchProviders, apiKeys, type Provider, type Service } from "../lib/api";
+import { fetchProviders, apiKeys, type Provider } from "../lib/api";
 
 const GRID = "rgba(0,0,0,0.12)";
 
 const statusColor: Record<string, string> = {
   ACTIVE: "#22c55e",
-  INACTIVE: "#facc15",
+  REGISTERED: "#E85A00",
   SUSPENDED: "#ef4444",
-  REGISTERED: "#6b7280",
 };
 
 const badgeForTrust: Record<string, string | null> = {
@@ -58,33 +58,26 @@ function SkeletonCard() {
 export function ServiceGrid() {
   const [activeCategory, setActiveCategory] = useState("ALL");
 
-  const { data: services = [], isLoading: loadingServices } = useQuery<Service[]>({
-    queryKey: apiKeys.services,
-    queryFn: fetchServices,
-  });
-
-  const { data: providers = [] } = useQuery<Provider[]>({
+  const { data: providers = [], isLoading } = useQuery<Provider[]>({
     queryKey: apiKeys.providers,
     queryFn: fetchProviders,
   });
 
-  const providerMap = Object.fromEntries(providers.map((p) => [p.provider_id, p]));
-  const allTypes = Array.from(new Set(services.map((s) => s.service_type)));
+  const allTypes = Array.from(new Set(providers.map((p) => p.service_type)));
   const categories = ["ALL", ...allTypes];
 
   const filtered =
     activeCategory === "ALL"
-      ? services
-      : services.filter((s) => s.service_type === activeCategory);
+      ? providers
+      : providers.filter((p) => p.service_type === activeCategory);
 
   return (
     <>
-      {/* Category filter */}
       <div
         className="flex items-center overflow-x-auto"
         style={{ borderBottom: `1px solid ${GRID}` }}
       >
-        {(loadingServices ? ["ALL"] : categories).map((cat) => (
+        {(isLoading ? ["ALL"] : categories).map((cat) => (
           <button
             key={cat}
             onClick={() => setActiveCategory(cat)}
@@ -101,120 +94,116 @@ export function ServiceGrid() {
         ))}
       </div>
 
-      {/* Grid */}
       <section
         className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
         style={{ borderBottom: `1px solid ${GRID}` }}
       >
-        {loadingServices
+        {isLoading
           ? Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
           : filtered.length === 0
-          ? (
-            <div
-              className="col-span-3 p-12 text-center text-sm text-black/40"
-            >
-              No services in this category.
-            </div>
-          )
-          : filtered.map((s) => {
-              const provider = providerMap[s.provider_id];
-              const badge = provider ? (badgeForTrust[provider.trust_level] ?? null) : null;
+            ? (
+              <div className="col-span-3 p-12 text-center text-sm text-black/40">
+                No providers in this category.
+              </div>
+            )
+            : filtered.map((p) => {
+                const badge = badgeForTrust[p.trust_level] ?? null;
+                const jobHref = `/jobs/${encodeURIComponent(p.request_id)}`;
 
-              return (
-                <div
-                  key={s.service_id}
-                  className="flex flex-col justify-between p-7 group cursor-pointer transition-colors hover:bg-black/[0.03]"
-                  style={{
-                    borderRight: `1px solid ${GRID}`,
-                    borderBottom: `1px solid ${GRID}`,
-                  }}
-                >
-                  <div>
-                    <div className="flex items-start justify-between mb-5">
-                      <div
-                        className="w-10 h-10 flex items-center justify-center text-white text-xs font-bold shrink-0"
-                        style={{ background: "#0C0C0C" }}
-                      >
-                        {s.name.slice(0, 2).toUpperCase()}
-                      </div>
-                      {badge && (
-                        <span
-                          className="text-[9px] font-bold uppercase tracking-widest px-2 py-1"
-                          style={{
-                            background: badge === "Verified" ? "#0C0C0C" : "#E85A00",
-                            color: "#fff",
-                            letterSpacing: "0.12em",
-                          }}
+                return (
+                  <Link
+                    key={p.request_id}
+                    href={jobHref}
+                    className="flex flex-col justify-between p-7 group cursor-pointer transition-colors hover:bg-black/[0.03]"
+                    style={{
+                      borderRight: `1px solid ${GRID}`,
+                      borderBottom: `1px solid ${GRID}`,
+                    }}
+                  >
+                    <div>
+                      <div className="flex items-start justify-between mb-5">
+                        <div
+                          className="w-10 h-10 flex items-center justify-center text-white text-xs font-bold shrink-0"
+                          style={{ background: "#0C0C0C" }}
                         >
-                          {badge}
+                          {p.name.slice(0, 2).toUpperCase()}
+                        </div>
+                        {badge && (
+                          <span
+                            className="text-[9px] font-bold uppercase tracking-widest px-2 py-1"
+                            style={{
+                              background: badge === "Verified" ? "#0C0C0C" : "#E85A00",
+                              color: "#fff",
+                              letterSpacing: "0.12em",
+                            }}
+                          >
+                            {badge}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mb-1">
+                        <span
+                          className="text-[10px] font-bold uppercase tracking-widest"
+                          style={{ color: "#E85A00", letterSpacing: "0.14em" }}
+                        >
+                          {p.service_type}
                         </span>
+                      </div>
+                      <h3
+                        className="text-xl font-bold mb-2"
+                        style={{
+                          fontFamily: "var(--font-bebas-neue), sans-serif",
+                          letterSpacing: "0.04em",
+                          fontSize: "1.35rem",
+                        }}
+                      >
+                        {p.name}
+                      </h3>
+                      {p.description && (
+                        <p className="text-xs leading-relaxed text-black/60 mb-5">
+                          {p.description}
+                        </p>
                       )}
                     </div>
 
-                    <div className="mb-1">
-                      <span
-                        className="text-[10px] font-bold uppercase tracking-widest"
-                        style={{ color: "#E85A00", letterSpacing: "0.14em" }}
-                      >
-                        {s.service_type}
-                      </span>
-                    </div>
-                    <h3
-                      className="text-xl font-bold mb-2"
-                      style={{
-                        fontFamily: "var(--font-bebas-neue), sans-serif",
-                        letterSpacing: "0.04em",
-                        fontSize: "1.35rem",
-                      }}
-                    >
-                      {s.name}
-                    </h3>
-                    {s.description && (
-                      <p className="text-xs leading-relaxed text-black/60 mb-5">
-                        {s.description}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-3">
-                      <StarRating rating={4.7} />
-                      <span className="flex items-center gap-1">
-                        <span
-                          className="h-1.5 w-1.5 rounded-full"
-                          style={{
-                            background: statusColor[s.status] ?? statusColor.REGISTERED,
-                          }}
-                        />
-                        <span className="text-[10px] text-black/40 uppercase tracking-widest">
-                          {s.status}
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-3">
+                        <StarRating rating={4.7} />
+                        <span className="flex items-center gap-1">
+                          <span
+                            className="h-1.5 w-1.5 rounded-full"
+                            style={{
+                              background: statusColor[p.status] ?? statusColor.REGISTERED,
+                            }}
+                          />
+                          <span className="text-[10px] text-black/40 uppercase tracking-widest">
+                            {p.status}
+                          </span>
                         </span>
-                      </span>
-                    </div>
-                    <div
-                      className="flex items-center justify-between pt-3"
-                      style={{ borderTop: `1px solid ${GRID}` }}
-                    >
-                      <div>
-                        <span className="text-xs font-semibold text-black/60">
-                          ${s.price_usdc}{" "}
-                          <span style={{ color: "#E85A00" }}>USDC</span>
-                          <span className="text-black/40">/call</span>
-                        </span>
-                        {provider && (
-                          <p className="text-[10px] text-black/35 mt-0.5">
-                            by {provider.name}
-                          </p>
-                        )}
                       </div>
-                      <button className="btn-cyber" style={{ padding: "8px 14px", fontSize: "0.6rem" }}>
-                        Integrate <ArrowRight size={10} />
-                      </button>
+                      <div
+                        className="flex items-center justify-between pt-3"
+                        style={{ borderTop: `1px solid ${GRID}` }}
+                      >
+                        <div>
+                          <span className="text-xs font-semibold text-black/60">
+                            ${p.price_usdc}{" "}
+                            <span style={{ color: "#E85A00" }}>USDC</span>
+                            <span className="text-black/40">/call</span>
+                          </span>
+                        </div>
+                        <span
+                          className="btn-cyber inline-flex items-center gap-1"
+                          style={{ padding: "8px 14px", fontSize: "0.6rem" }}
+                        >
+                          Run job <ArrowRight size={10} />
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              );
-            })}
+                  </Link>
+                );
+              })}
       </section>
     </>
   );

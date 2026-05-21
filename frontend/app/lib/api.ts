@@ -1,25 +1,6 @@
-export type Provider = {
-  provider_id: string;
-  name: string;
-  description: string | null;
-  owner_wallet: string;
-  payout_wallet: string;
-  api_base_url: string;
-  trust_level: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-};
+import type { Provider } from "skillhub-sdk";
 
-export type Service = {
-  service_id: string;
-  provider_id: string;
-  name: string;
-  description: string | null;
-  service_type: string;
-  price_usdc: string;
-  status: string;
-};
+export type { Provider };
 
 async function apiFetch<T>(path: string): Promise<T> {
   const res = await fetch(`/api${path}`);
@@ -30,14 +11,10 @@ async function apiFetch<T>(path: string): Promise<T> {
 export const apiKeys = {
   providers: ["providers"] as const,
   provider: (id: string) => ["providers", id] as const,
-  services: ["services"] as const,
 };
 
 export const fetchProviders = (): Promise<Provider[]> =>
   apiFetch<Provider[]>("/providers");
 
-export const fetchProvider = (providerId: string): Promise<Provider> =>
-  apiFetch<Provider>(`/providers/${encodeURIComponent(providerId)}`);
-
-export const fetchServices = (): Promise<Service[]> =>
-  apiFetch<Service[]>("/services");
+export const fetchProvider = (requestId: string): Promise<Provider> =>
+  apiFetch<Provider>(`/providers/${encodeURIComponent(requestId)}`);

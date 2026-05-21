@@ -64,7 +64,7 @@ function SkeletonRow() {
     <div
       className="grid items-center px-6 md:px-10 py-4 gap-4 animate-pulse"
       style={{
-        gridTemplateColumns: "2rem 1fr 12rem 8rem 7rem",
+        gridTemplateColumns: "2rem 1fr 8rem 6rem 7rem 6rem",
         borderBottom: `1px solid ${GRID}`,
       }}
     >
@@ -202,12 +202,12 @@ export default function AgentsPage() {
       <div
         className="hidden md:grid items-center px-6 md:px-10 py-3 gap-4"
         style={{
-          gridTemplateColumns: "2rem 1fr 12rem 8rem 7rem",
+          gridTemplateColumns: "2rem 1fr 8rem 6rem 7rem 6rem",
           borderBottom: `1px solid ${GRID}`,
           background: "rgba(0,0,0,0.03)",
         }}
       >
-        {["#", "Provider", "API", "Trust", "Status"].map((col) => (
+        {["#", "Provider", "Type", "Price", "Trust", "Status"].map((col) => (
           <span
             key={col}
             className="text-[10px] font-bold uppercase tracking-widest text-black/40"
@@ -249,11 +249,11 @@ export default function AgentsPage() {
 
             return (
               <Link
-                key={provider.provider_id}
-                href={`/jobs/${encodeURIComponent(provider.provider_id)}`}
+                key={provider.request_id}
+                href={`/jobs/${encodeURIComponent(provider.request_id)}`}
                 className="group flex flex-col md:grid items-center px-6 md:px-10 py-4 gap-4 cursor-pointer transition-colors hover:bg-black/[0.025]"
                 style={{
-                  gridTemplateColumns: "2rem 1fr 12rem 8rem 7rem",
+                  gridTemplateColumns: "2rem 1fr 8rem 6rem 7rem 6rem",
                   borderBottom: `1px solid ${GRID}`,
                 }}
               >
@@ -266,8 +266,11 @@ export default function AgentsPage() {
                     <span className="font-semibold text-sm text-black truncate">
                       {provider.name}
                     </span>
-                    <span className="text-[10px] font-mono text-black/30">
-                      id {provider.provider_id}
+                    <span
+                      className="text-[10px] font-mono text-black/30 truncate max-w-[12rem]"
+                      title={provider.request_id}
+                    >
+                      {provider.request_id.slice(0, 10)}…
                     </span>
                     <ArrowUpRight
                       size={13}
@@ -285,32 +288,18 @@ export default function AgentsPage() {
                   )}
                 </div>
 
+                <span className="text-[11px] font-mono uppercase tracking-wider text-black/50 truncate">
+                  {provider.service_type}
+                </span>
+
                 <span
-                  role="link"
-                  tabIndex={0}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.open(
-                      provider.api_base_url,
-                      "_blank",
-                      "noopener,noreferrer",
-                    );
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      window.open(
-                        provider.api_base_url,
-                        "_blank",
-                        "noopener,noreferrer",
-                      );
-                    }
-                  }}
-                  className="text-[11px] text-black/50 truncate hover:text-[#E85A00] transition-colors min-w-0 cursor-pointer"
+                  className="text-sm font-bold tabular-nums"
+                  style={{ color: "#E85A00" }}
                 >
-                  {provider.api_base_url.replace(/^https?:\/\//, "")}
+                  ${parseFloat(provider.price_usdc).toFixed(2)}
+                  <span className="text-[9px] font-normal text-black/35 ml-1">
+                    USDC
+                  </span>
                 </span>
 
                 <div className="min-w-0">

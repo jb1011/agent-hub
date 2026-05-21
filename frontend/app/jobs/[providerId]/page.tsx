@@ -1,153 +1,321 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Zap, ExternalLink } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, Zap, ExternalLink, Loader2 } from "lucide-react";
 import { useAccount, useSendTransaction } from "wagmi";
 import { arcTestnet } from "viem/chains";
-import {
-  SkillHubClient,
-  type PreparedContractTransaction,
-} from "skillhub-sdk";
+import type { CreateJobInput, JobWithDetails } from "skillhub-sdk";
 import NavMenu from "../../components/NavMenu";
 import { ConnectButton } from "../../components/ConnectButton";
 import { ensureArcTestnet } from "../../lib/arc-wallet";
+import { arcPublicClient } from "../../lib/arc-public-client";
 import { useWalletChainId } from "../../lib/useWalletChainId";
-import { sha256Bytes32Hex } from "../../lib/sha256";
+import { decodeCreateJobRequestId } from "../../lib/decode-create-job";
+import { formatJobOutput } from "../../lib/format-job-output";
+import {
+  buildApproveUsdcTransaction,
+  fetchUsdcAllowance,
+} from "../../lib/escrow-payment";
+import { skillHub } from "../../lib/skillhub";
 import { apiKeys, fetchProvider } from "../../lib/api";
 
 const GRID = "rgba(0,0,0,0.12)";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
-
 const QUEUE_TIMEOUT_SECONDS = 300;
 const AUTHORIZATION_EXPIRES_IN_SECONDS = 999_999_999;
 
-const sdk = new SkillHubClient({ baseUrl: API_BASE_URL });
+const TERMINAL_FAILURE_STATUSES = new Set([
+  "FAILED",
+  "EXPIRED",
+  "REFUNDED",
+]);
 
-type Status = "idle" | "switching" | "signing" | "success" | "error";
+type Phase =
+  | "form"
+  | "switching"
+  | "signing"
+  | "confirming"
+  | "waiting_funded"
+  | "waiting_output"
+  | "done"
+  | "error";
 
 const inputClass =
   "w-full bg-transparent border border-black/15 px-4 py-3 text-sm placeholder:text-black/30 focus:outline-none focus:border-[#E85A00] transition-colors resize-none";
 
-function isPreparedTransaction(
-  value: unknown,
-): value is PreparedContractTransaction {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.to === "string" &&
-    typeof candidate.data === "string" &&
-    typeof candidate.value === "string"
-  );
-}
-
 function formatSubmitError(err: unknown): string {
   const raw = err instanceof Error ? err.message : "Something went wrong";
-  if (raw.includes("service_not_found")) {
-    return "No service exists for this provider ID. The provider must list a service with the same ID before you can create a job.";
+  if (raw.includes("provider_not_found")) {
+    return "Provider not found.";
+  }
+  if (raw.includes("provider_registry_id_missing")) {
+    return "This provider is not on-chain yet. Finish registration and wait for confirmation before creating a job.";
+  }
+  if (raw.includes("insufficient allowance") || raw.includes("ERC20")) {
+    return "USDC allowance may be insufficient. Approve USDC for the escrow contract on Arc Testnet, then try again.";
   }
   if (
     raw.includes("does not match the target chain") ||
     raw.includes("Expected Chain ID: 5042002")
   ) {
-    return "MetaMask is on the wrong network. Submit again and approve the Arc Testnet switch in MetaMask.";
+    return "MetaMask is on the wrong network. Submit again and approve the Arc Testnet switch.";
   }
   if ((err as { code?: number })?.code === 4001) {
-    return "You rejected the MetaMask prompt. Approve the network switch or transaction to continue.";
+    return "You rejected the MetaMask prompt.";
   }
   return raw;
 }
 
+function LoadingPanel({
+  title,
+  detail,
+  job,
+}: {
+  title: string;
+  detail: string;
+  job?: JobWithDetails;
+}) {
+  return (
+    <div className="flex flex-col items-start gap-6 max-w-lg">
+      <Loader2
+        size={40}
+        className="text-[#E85A00] animate-spin"
+        style={{ animationDuration: "1.2s" }}
+      />
+      <h2
+        className="uppercase"
+        style={{
+          fontFamily: "var(--font-bebas-neue), sans-serif",
+          fontSize: "clamp(32px, 4vw, 52px)",
+          lineHeight: 1,
+          color: "#0c0c0c",
+        }}
+      >
+        {title}
+      </h2>
+      <p className="text-sm text-black/60 leading-relaxed">{detail}</p>
+      {job && (
+        <div className="text-[10px] uppercase tracking-widest text-black/35 space-y-1 font-mono">
+          <div className="break-all">request_id: {job.request_id}</div>
+          {job.job_id && <div>job_id: {job.job_id}</div>}
+          <div>status: {job.status}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CreateJobPage() {
   const params = useParams();
-  const providerId = decodeURIComponent(String(params.providerId ?? ""));
+  /** Provider page id in the URL — provider `request_id` (bytes32). */
+  const providerRequestId = decodeURIComponent(String(params.providerId ?? ""));
 
+  const queryClient = useQueryClient();
   const { address, isConnected } = useAccount();
   const walletChainId = useWalletChainId();
   const onArc = walletChainId === arcTestnet.id;
   const { sendTransactionAsync } = useSendTransaction();
 
   const [question, setQuestion] = useState("");
-  const [status, setStatus] = useState<Status>("idle");
+  const [phase, setPhase] = useState<Phase>("form");
+  const [approveBusy, setApproveBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [approveTxHash, setApproveTxHash] = useState<string | null>(null);
+  const [jobRequestId, setJobRequestId] = useState<string | null>(null);
 
   const {
     data: provider,
     isLoading: loadingProvider,
     isError: providerError,
   } = useQuery({
-    queryKey: apiKeys.provider(providerId),
-    queryFn: () => fetchProvider(providerId),
-    enabled: providerId.length > 0,
+    queryKey: apiKeys.provider(providerRequestId),
+    queryFn: () => fetchProvider(providerRequestId),
+    enabled: providerRequestId.length > 0,
   });
 
-  const isSubmitting = status === "switching" || status === "signing";
+  const {
+    data: allowance,
+    isLoading: loadingAllowance,
+    isFetching: fetchingAllowance,
+  } = useQuery({
+    queryKey: [
+      "usdc-allowance",
+      address,
+      provider?.price_usdc,
+      provider?.registry_provider_id,
+    ],
+    queryFn: () =>
+      fetchUsdcAllowance(address!, provider!.price_usdc),
+    enabled:
+      isConnected &&
+      !!address &&
+      !!provider?.price_usdc &&
+      !!provider?.registry_provider_id,
+  });
+
+  const allowanceReady = allowance?.sufficient === true;
+
+  const isTxBusy =
+    phase === "switching" || phase === "signing" || phase === "confirming";
+  const isPolling = phase === "waiting_funded" || phase === "waiting_output";
+
+  const canApprove =
+    isConnected &&
+    !!address &&
+    !approveBusy &&
+    !isTxBusy &&
+    !isPolling &&
+    !loadingProvider &&
+    !loadingAllowance &&
+    !providerError &&
+    !!provider?.registry_provider_id &&
+    !!allowance &&
+    !allowance.sufficient;
+
   const canSubmit =
     question.trim().length > 0 &&
     isConnected &&
     !!address &&
-    !isSubmitting &&
+    allowanceReady &&
+    !approveBusy &&
+    !isTxBusy &&
+    !isPolling &&
+    phase !== "done" &&
     !loadingProvider &&
-    !providerError;
+    !providerError &&
+    !!provider?.registry_provider_id;
+
+  async function handleApproveUsdc() {
+    if (!canApprove || !address || !allowance) return;
+
+    setErrorMsg("");
+    setApproveTxHash(null);
+    setApproveBusy(true);
+
+    try {
+      await ensureArcTestnet();
+      const { to, data } = buildApproveUsdcTransaction(
+        allowance.paymentToken,
+        allowance.required,
+      );
+      const hash = await sendTransactionAsync({
+        to,
+        data,
+        value: BigInt(0),
+        chainId: arcTestnet.id,
+      });
+      setApproveTxHash(hash);
+
+      const receipt = await arcPublicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status === "reverted") {
+        throw new Error("USDC approve transaction reverted on-chain.");
+      }
+
+      await queryClient.invalidateQueries({
+        queryKey: ["usdc-allowance", address],
+      });
+    } catch (err) {
+      setErrorMsg(formatSubmitError(err));
+      setPhase("error");
+    } finally {
+      setApproveBusy(false);
+    }
+  }
+
+  const { data: job } = useQuery({
+    queryKey: ["jobs", jobRequestId],
+    queryFn: () => skillHub.jobs.get(jobRequestId!),
+    enabled: !!jobRequestId && isPolling,
+    refetchInterval: 2500,
+  });
+
+  useEffect(() => {
+    if (!job || !isPolling) return;
+
+    if (TERMINAL_FAILURE_STATUSES.has(job.status)) {
+      setErrorMsg(`Job ended with status ${job.status}.`);
+      setPhase("error");
+      return;
+    }
+
+    if (phase === "waiting_funded" && job.job_id) {
+      setPhase("waiting_output");
+      return;
+    }
+
+    if (phase === "waiting_output" && job.output != null) {
+      setPhase("done");
+    }
+  }, [job, phase, isPolling]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canSubmit || !address) return;
+    if (!canSubmit || !address || !provider?.registry_provider_id) return;
 
     setErrorMsg("");
     setTxHash(null);
+    setJobRequestId(null);
 
     try {
       const trimmed = question.trim();
-      const inputHash = await sha256Bytes32Hex(trimmed);
 
-      setStatus("signing");
-      const response = await sdk.jobs.create({
+      const jobPayload: CreateJobInput = {
         user_wallet: address,
-        service_id: providerId,
+        provider_id: provider.registry_provider_id,
         input: { uri: trimmed },
-        input_hash: inputHash,
+        input_hash: trimmed,
         queue_timeout_seconds: QUEUE_TIMEOUT_SECONDS,
         authorization_expires_in_seconds: AUTHORIZATION_EXPIRES_IN_SECONDS,
-      });
+      };
 
-      if (!isPreparedTransaction(response)) {
-        setTxHash(null);
-        setStatus("success");
-        return;
-      }
+      setPhase("signing");
+      const prepared = await skillHub.jobs.create(jobPayload);
+      const requestId = decodeCreateJobRequestId(prepared.data);
+      setJobRequestId(requestId);
 
       if (
-        response.chain_id !== undefined &&
-        response.chain_id !== arcTestnet.id
+        prepared.chain_id !== undefined &&
+        prepared.chain_id !== arcTestnet.id
       ) {
         throw new Error(
-          `Prepared transaction targets chain ${response.chain_id}, expected Arc Testnet (${arcTestnet.id}).`,
+          `Prepared transaction targets chain ${prepared.chain_id}, expected Arc Testnet (${arcTestnet.id}).`,
         );
       }
 
-      setStatus("switching");
+      setPhase("switching");
       await ensureArcTestnet();
 
-      setStatus("signing");
+      setPhase("signing");
       const hash = await sendTransactionAsync({
-        to: response.to as `0x${string}`,
-        data: response.data as `0x${string}`,
-        value: BigInt(response.value),
+        to: prepared.to as `0x${string}`,
+        data: prepared.data as `0x${string}`,
+        value: BigInt(prepared.value),
         chainId: arcTestnet.id,
       });
-
       setTxHash(hash);
-      setStatus("success");
+
+      setPhase("confirming");
+      const receipt = await arcPublicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status === "reverted") {
+        throw new Error("createJob transaction reverted on-chain.");
+      }
+
+      setPhase("waiting_funded");
     } catch (err) {
       setErrorMsg(formatSubmitError(err));
-      setStatus("error");
+      setPhase("error");
     }
   }
+
+  const waitingTitle =
+    phase === "waiting_funded" ? "Funding Job" : "Agent Working";
+  const waitingDetail =
+    phase === "waiting_funded"
+      ? "Waiting for your createJob transaction to be indexed and linked to an on-chain job_id…"
+      : "The provider is processing your request. This page will update when output is ready.";
 
   return (
     <div
@@ -192,7 +360,7 @@ export default function CreateJobPage() {
               <p className="text-sm text-black/40">Loading provider…</p>
             ) : providerError || !provider ? (
               <p className="text-sm text-red-600">
-                Provider &quot;{providerId}&quot; not found.
+                Provider &quot;{providerRequestId}&quot; not found.
               </p>
             ) : (
               <>
@@ -210,13 +378,25 @@ export default function CreateJobPage() {
                   {provider.name}
                 </h1>
                 <p className="text-sm text-black/60 leading-relaxed max-w-xs mb-4">
-                  Submit a question to this provider. Your input is committed
-                  on-chain with SHA-256, then funded via USDC escrow on Arc
-                  Testnet.
+                  Submit a question. The API creates a job record, you fund it
+                  on Arc Testnet, then the agent fills in{" "}
+                  <span className="font-mono">output</span> when done.
                 </p>
                 <div className="text-[10px] uppercase tracking-widest text-black/35 space-y-1">
-                  <div>Provider ID: {provider.provider_id}</div>
-                  <div>Service ID: {providerId}</div>
+                  <div className="font-mono break-all">
+                    provider request_id: {provider.request_id}
+                  </div>
+                  {provider.registry_provider_id ? (
+                    <div>provider_id: {provider.registry_provider_id}</div>
+                  ) : (
+                    <div className="text-[#E85A00]">
+                      provider_id pending — complete registration first
+                    </div>
+                  )}
+                  <div>
+                    ${parseFloat(provider.price_usdc).toFixed(2)} USDC ·{" "}
+                    {provider.service_type}
+                  </div>
                 </div>
               </>
             )}
@@ -238,15 +418,14 @@ export default function CreateJobPage() {
               ← All Providers
             </a>
             <p className="text-[10px] text-black/30 uppercase tracking-widest leading-relaxed">
-              Connect MetaMask on Arc Testnet. You need testnet USDC for gas and
-              escrow payment.
+              Step 1: approve USDC. Step 2: create job and wait for the agent.
             </p>
           </div>
         </div>
 
         <div className="flex-1 px-6 md:px-10 py-12 md:py-16">
-          {status === "success" ? (
-            <div className="flex flex-col items-start gap-6 max-w-lg">
+          {phase === "done" && job ? (
+            <div className="flex flex-col items-start gap-6 max-w-2xl">
               <div
                 className="w-12 h-12 flex items-center justify-center text-white text-xl"
                 style={{ background: "#E85A00" }}
@@ -262,13 +441,22 @@ export default function CreateJobPage() {
                   color: "#0c0c0c",
                 }}
               >
-                Job Created
+                Response Ready
               </h2>
-              <p className="text-sm text-black/60 leading-relaxed">
-                {txHash
-                  ? "Your create-job transaction was broadcast to Arc Testnet. Once confirmed, the job is funded on-chain."
-                  : "Job was created in the API without an on-chain transaction step."}
-              </p>
+              <div
+                className="w-full p-5 text-sm leading-relaxed text-black/80 whitespace-pre-wrap"
+                style={{
+                  border: `1px solid ${GRID}`,
+                  background: "rgba(255,255,255,0.35)",
+                }}
+              >
+                {formatJobOutput(job.output)}
+              </div>
+              <div className="text-[10px] uppercase tracking-widest text-black/35 space-y-1 font-mono">
+                {job.job_id && <div>job_id: {job.job_id}</div>}
+                <div className="break-all">request_id: {job.request_id}</div>
+                <div>status: {job.status}</div>
+              </div>
               {txHash && (
                 <a
                   href={`https://testnet.arcscan.app/tx/${txHash}`}
@@ -280,10 +468,33 @@ export default function CreateJobPage() {
                   <ExternalLink size={12} />
                 </a>
               )}
-              <a href="/agents" className="btn-cyber">
-                Back to Providers <ArrowRight size={13} />
-              </a>
+              <button
+                type="button"
+                className="btn-cyber"
+                onClick={() => {
+                  setQuestion("");
+                  setPhase("form");
+                  setJobRequestId(null);
+                  setTxHash(null);
+                  setApproveTxHash(null);
+                  setErrorMsg("");
+                  if (address) {
+                    void queryClient.invalidateQueries({
+                      queryKey: ["usdc-allowance", address],
+                    });
+                  }
+                }}
+              >
+                Ask Another Question <ArrowRight size={13} />
+              </button>
             </div>
+          ) : isPolling ? (
+            <LoadingPanel title={waitingTitle} detail={waitingDetail} job={job} />
+          ) : phase === "confirming" ? (
+            <LoadingPanel
+              title="Confirming Transaction"
+              detail="Waiting for Arc Testnet confirmation…"
+            />
           ) : providerError || (!loadingProvider && !provider) ? (
             <div className="max-w-lg">
               <p className="text-sm text-black/60 mb-6">
@@ -309,9 +520,94 @@ export default function CreateJobPage() {
                     to switch to Arc Testnet.
                   </p>
                 )}
+                {provider && !provider.registry_provider_id && (
+                  <p className="text-[11px] text-[#E85A00] font-medium mt-3">
+                    This provider is not on-chain yet. Complete registration
+                    before creating a job.
+                  </p>
+                )}
               </div>
 
+              {isConnected &&
+                provider?.registry_provider_id &&
+                !loadingAllowance && (
+                  <div
+                    className="flex flex-col gap-3 p-4"
+                    style={{
+                      border: `1px solid ${GRID}`,
+                      background: allowanceReady
+                        ? "rgba(34, 197, 94, 0.06)"
+                        : "rgba(232, 90, 0, 0.06)",
+                    }}
+                  >
+                    <div className="text-[10px] uppercase tracking-widest font-bold text-black/40">
+                      Step 1 · USDC allowance
+                    </div>
+                    {allowanceReady ? (
+                      <p className="text-sm text-black/70">
+                        Escrow can spend{" "}
+                        <span className="font-semibold">
+                          {allowance.requiredLabel} USDC
+                        </span>{" "}
+                        (allowance {allowance.allowanceLabel}).
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-sm text-black/70 leading-relaxed">
+                          Approve{" "}
+                          <span className="font-semibold">
+                            {allowance?.requiredLabel ??
+                              parseFloat(provider.price_usdc).toFixed(2)}{" "}
+                            USDC
+                          </span>{" "}
+                          for the escrow contract before creating a job.
+                          {allowance && (
+                            <span className="block mt-1 text-black/45 text-xs">
+                              Current allowance: {allowance.allowanceLabel}{" "}
+                              USDC
+                            </span>
+                          )}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleApproveUsdc}
+                          disabled={!canApprove}
+                          className="btn-cyber w-fit disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {approveBusy
+                            ? "Awaiting Approval…"
+                            : "Approve USDC"}
+                          {!approveBusy && <ArrowRight size={13} />}
+                        </button>
+                        {approveTxHash && (
+                          <a
+                            href={`https://testnet.arcscan.app/tx/${approveTxHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-mono text-[#E85A00] hover:underline flex items-center gap-1 break-all"
+                          >
+                            {approveTxHash}
+                            <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </>
+                    )}
+                    {fetchingAllowance && !approveBusy && (
+                      <p className="text-[10px] text-black/40">
+                        Refreshing allowance…
+                      </p>
+                    )}
+                  </div>
+                )}
+
+              {loadingAllowance && isConnected && provider?.registry_provider_id && (
+                <p className="text-sm text-black/40">Checking USDC allowance…</p>
+              )}
+
               <div className="flex flex-col gap-1.5">
+                <div className="text-[10px] uppercase tracking-widest font-bold text-black/40">
+                  Step 2 · Your question
+                </div>
                 <label className="text-xs font-semibold uppercase tracking-wider text-black/50">
                   Your question <span className="text-[#E85A00]">*</span>
                 </label>
@@ -322,16 +618,16 @@ export default function CreateJobPage() {
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
                   className={inputClass}
-                  disabled={loadingProvider}
+                  disabled={loadingProvider || isTxBusy || approveBusy}
                 />
                 <span className="text-[10px] text-black/35">
-                  Stored as <span className="font-mono">input.uri</span>.{" "}
-                  <span className="font-mono">input_hash</span> is SHA-256 of
-                  this text (bytes32).
+                  Sent as <span className="font-mono">input.uri</span> and{" "}
+                  <span className="font-mono">input_hash</span> (plain text, per{" "}
+                  <span className="font-mono">job.json</span>).
                 </span>
               </div>
 
-              {status === "error" && (
+              {phase === "error" && (
                 <div
                   className="p-3 text-xs text-red-700 break-words"
                   style={{
@@ -349,16 +645,21 @@ export default function CreateJobPage() {
                   disabled={!canSubmit}
                   className="btn-cyber disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {status === "switching"
+                  {phase === "switching"
                     ? "Switching Network…"
-                    : status === "signing"
+                    : phase === "signing"
                       ? "Awaiting Signature…"
                       : "Create Job"}
-                  {!isSubmitting && <ArrowRight size={13} />}
+                  {phase === "form" && <ArrowRight size={13} />}
                 </button>
                 {!isConnected && (
                   <span className="text-[11px] text-black/40">
                     Connect a wallet to submit.
+                  </span>
+                )}
+                {isConnected && !allowanceReady && !loadingAllowance && (
+                  <span className="text-[11px] text-black/40">
+                    Approve USDC first.
                   </span>
                 )}
               </div>
