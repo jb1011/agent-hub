@@ -24,7 +24,7 @@ export function RotatingHeroWord() {
   const [index, setIndex] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [instant, setInstant] = useState(false);
-  const snapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const snapTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -55,7 +55,9 @@ export function RotatingHeroWord() {
     }, TRANSITION_MS);
 
     return () => {
-      if (snapTimeoutRef.current) clearTimeout(snapTimeoutRef.current);
+      if (snapTimeoutRef.current != null) {
+        window.clearTimeout(snapTimeoutRef.current);
+      }
     };
   }, [index]);
 
