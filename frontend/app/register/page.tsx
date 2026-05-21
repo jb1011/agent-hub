@@ -344,7 +344,7 @@ export default function RegisterPage() {
                     <input
                       type="url"
                       required
-                      placeholder="https://your-agent-api.example.com"
+                      placeholder="http://164.68.116.179:3000 (agent base; UI calls /chat)"
                       value={form.api_base_url}
                       onChange={(e) => set("api_base_url", e.target.value)}
                       className={inputClass}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Zap, ExternalLink, Loader2 } from "lucide-react";
@@ -14,23 +14,22 @@ import { arcPublicClient } from "../../lib/arc-public-client";
 import { useWalletChainId } from "../../lib/useWalletChainId";
 import { decodeCreateJobRequestId } from "../../lib/decode-create-job";
 import { formatJobOutput } from "../../lib/format-job-output";
+import { sha256Bytes32Hex } from "../../lib/sha256";
 import {
   buildApproveUsdcTransaction,
   fetchUsdcAllowance,
 } from "../../lib/escrow-payment";
-import { skillHub } from "../../lib/skillhub";
+import { serverApiBaseUrl, skillHub } from "../../lib/skillhub";
 import { apiKeys, fetchProvider } from "../../lib/api";
+
+const SKILLHUB_API_URL = serverApiBaseUrl;
 
 const GRID = "rgba(0,0,0,0.12)";
 
 const QUEUE_TIMEOUT_SECONDS = 300;
 const AUTHORIZATION_EXPIRES_IN_SECONDS = 999_999_999;
 
-const TERMINAL_FAILURE_STATUSES = new Set([
-  "FAILED",
-  "EXPIRED",
-  "REFUNDED",
-]);
+const TERMINAL_FAILURE_STATUSES = new Set(["FAILED", "EXPIRED", "REFUNDED"]);
 
 type Phase =
   | "form"
@@ -125,6 +124,8 @@ export default function CreateJobPage() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [approveTxHash, setApproveTxHash] = useState<string | null>(null);
   const [jobRequestId, setJobRequestId] = useState<string | null>(null);
+  const [invokeError, setInvokeError] = useState<string | null>(null);
+  const invokedForJobRef = useRef<string | null>(null);
 
   const {
     data: provider,
@@ -135,11 +136,11 @@ export default function CreateJobPage() {
     queryFn: () => fetchProvider(providerRequestId),
     enabled: providerRequestId.length > 0,
   });
-
   const {
     data: allowance,
     isLoading: loadingAllowance,
     isFetching: fetchingAllowance,
+    isError: allowanceError,
   } = useQuery({
     queryKey: [
       "usdc-allowance",
@@ -147,8 +148,7 @@ export default function CreateJobPage() {
       provider?.price_usdc,
       provider?.registry_provider_id,
     ],
-    queryFn: () =>
-      fetchUsdcAllowance(address!, provider!.price_usdc),
+    queryFn: () => fetchUsdcAllowance(address!, provider!.price_usdc),
     enabled:
       isConnected &&
       !!address &&
@@ -156,7 +156,8 @@ export default function CreateJobPage() {
       !!provider?.registry_provider_id,
   });
 
-  const allowanceReady = allowance?.sufficient === true;
+  const hasSufficientAllowance = allowance?.sufficient === true;
+  const needsApproval = Boolean(allowance && !allowance.sufficient);
 
   const isTxBusy =
     phase === "switching" || phase === "signing" || phase === "confirming";
@@ -172,14 +173,13 @@ export default function CreateJobPage() {
     !loadingAllowance &&
     !providerError &&
     !!provider?.registry_provider_id &&
-    !!allowance &&
-    !allowance.sufficient;
+    needsApproval;
 
   const canSubmit =
     question.trim().length > 0 &&
     isConnected &&
     !!address &&
-    allowanceReady &&
+    hasSufficientAllowance &&
     !approveBusy &&
     !isTxBusy &&
     !isPolling &&
@@ -251,26 +251,77 @@ export default function CreateJobPage() {
     }
   }, [job, phase, isPolling]);
 
+  // useEffect(() => {
+  //   if (
+  //     phase !== "waiting_output" ||
+  //     !job?.job_id ||
+  //     !jobRequestId ||
+  //     !provider?.api_base_url
+  //   ) {
+  //     return;
+  //   }
+  //   if (invokedForJobRef.current === jobRequestId) return;
+  //   invokedForJobRef.current = jobRequestId;
+
+  //   const message = question.trim();
+  //   const apiBaseUrl = provider.api_base_url;
+
+  //   (async () => {
+  //     setInvokeError(null);
+  //     try {
+  //       //HERE
+  //       const res = await fetch("/api/invoke-provider", {
+  //         method: "POST",
+  //         headers: { "Content-Type": "application/json" },
+  //         body: JSON.stringify({
+  //           api_base_url: apiBaseUrl,
+  //           message,
+  //           job_request_id: jobRequestId,
+  //           skillhub_api_url: SKILLHUB_API_URL,
+  //         }),
+  //       });
+  //       const data = (await res.json()) as { ok?: boolean; error?: string };
+  //       console.log("data!!", data);
+  //       if (!res.ok || !data.ok) {
+  //         setInvokeError(
+  //           data.error ??
+  //             "Could not reach your agent API. Check api_base_url and that /chat accepts Skill Hub job payloads.",
+  //         );
+  //       }
+  //     } catch (err) {
+  //       setInvokeError(
+  //         err instanceof Error ? err.message : "Failed to invoke provider API",
+  //       );
+  //     }
+  //   })();
+  // }, [phase, job?.job_id, jobRequestId, provider?.api_base_url, question]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit || !address || !provider?.registry_provider_id) return;
 
     setErrorMsg("");
+    setInvokeError(null);
     setTxHash(null);
     setJobRequestId(null);
+    invokedForJobRef.current = null;
 
     try {
       const trimmed = question.trim();
+      const inputHash = await sha256Bytes32Hex(trimmed);
+
+      if (!provider.registry_provider_id) {
+        throw new Error("provider_registry_id_missing");
+      }
 
       const jobPayload: CreateJobInput = {
         user_wallet: address,
         provider_id: provider.registry_provider_id,
-        input: { uri: trimmed },
-        input_hash: trimmed,
+        input: { prompt: trimmed },
+        input_hash: inputHash,
         queue_timeout_seconds: QUEUE_TIMEOUT_SECONDS,
         authorization_expires_in_seconds: AUTHORIZATION_EXPIRES_IN_SECONDS,
       };
-
       setPhase("signing");
       const prepared = await skillHub.jobs.create(jobPayload);
       const requestId = decodeCreateJobRequestId(prepared.data);
@@ -315,7 +366,9 @@ export default function CreateJobPage() {
   const waitingDetail =
     phase === "waiting_funded"
       ? "Waiting for your createJob transaction to be indexed and linked to an on-chain job_id…"
-      : "The provider is processing your request. This page will update when output is ready.";
+      : invokeError
+        ? `Calling your agent at ${provider?.api_base_url ?? "api_base_url"}… (${invokeError}) Still waiting for on-chain output.`
+        : "Your job is funded — calling your agent API, then waiting for Skill Hub output…";
 
   return (
     <div
@@ -378,19 +431,24 @@ export default function CreateJobPage() {
                   {provider.name}
                 </h1>
                 <p className="text-sm text-black/60 leading-relaxed max-w-xs mb-4">
-                  Submit a question. The API creates a job record, you fund it
-                  on Arc Testnet, then the agent fills in{" "}
-                  <span className="font-mono">output</span> when done.
+                  Submit a question. You fund the job on Arc Testnet; once
+                  funded, this page calls your registered{" "}
+                  <span className="font-mono">api_base_url</span>/chat with the
+                  job id so your agent can run and post{" "}
+                  <span className="font-mono">output</span> to Skill Hub.
                 </p>
                 <div className="text-[10px] uppercase tracking-widest text-black/35 space-y-1">
                   <div className="font-mono break-all">
-                    provider request_id: {provider.request_id}
+                    URL id (request_id): {provider.request_id}
                   </div>
                   {provider.registry_provider_id ? (
-                    <div>provider_id: {provider.registry_provider_id}</div>
+                    <div>
+                      job provider_id (on-chain):{" "}
+                      {provider.registry_provider_id}
+                    </div>
                   ) : (
                     <div className="text-[#E85A00]">
-                      provider_id pending — complete registration first
+                      on-chain provider_id pending — complete registration first
                     </div>
                   )}
                   <div>
@@ -489,7 +547,11 @@ export default function CreateJobPage() {
               </button>
             </div>
           ) : isPolling ? (
-            <LoadingPanel title={waitingTitle} detail={waitingDetail} job={job} />
+            <LoadingPanel
+              title={waitingTitle}
+              detail={waitingDetail}
+              job={job}
+            />
           ) : phase === "confirming" ? (
             <LoadingPanel
               title="Confirming Transaction"
@@ -528,86 +590,7 @@ export default function CreateJobPage() {
                 )}
               </div>
 
-              {isConnected &&
-                provider?.registry_provider_id &&
-                !loadingAllowance && (
-                  <div
-                    className="flex flex-col gap-3 p-4"
-                    style={{
-                      border: `1px solid ${GRID}`,
-                      background: allowanceReady
-                        ? "rgba(34, 197, 94, 0.06)"
-                        : "rgba(232, 90, 0, 0.06)",
-                    }}
-                  >
-                    <div className="text-[10px] uppercase tracking-widest font-bold text-black/40">
-                      Step 1 · USDC allowance
-                    </div>
-                    {allowanceReady ? (
-                      <p className="text-sm text-black/70">
-                        Escrow can spend{" "}
-                        <span className="font-semibold">
-                          {allowance.requiredLabel} USDC
-                        </span>{" "}
-                        (allowance {allowance.allowanceLabel}).
-                      </p>
-                    ) : (
-                      <>
-                        <p className="text-sm text-black/70 leading-relaxed">
-                          Approve{" "}
-                          <span className="font-semibold">
-                            {allowance?.requiredLabel ??
-                              parseFloat(provider.price_usdc).toFixed(2)}{" "}
-                            USDC
-                          </span>{" "}
-                          for the escrow contract before creating a job.
-                          {allowance && (
-                            <span className="block mt-1 text-black/45 text-xs">
-                              Current allowance: {allowance.allowanceLabel}{" "}
-                              USDC
-                            </span>
-                          )}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={handleApproveUsdc}
-                          disabled={!canApprove}
-                          className="btn-cyber w-fit disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {approveBusy
-                            ? "Awaiting Approval…"
-                            : "Approve USDC"}
-                          {!approveBusy && <ArrowRight size={13} />}
-                        </button>
-                        {approveTxHash && (
-                          <a
-                            href={`https://testnet.arcscan.app/tx/${approveTxHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs font-mono text-[#E85A00] hover:underline flex items-center gap-1 break-all"
-                          >
-                            {approveTxHash}
-                            <ExternalLink size={12} />
-                          </a>
-                        )}
-                      </>
-                    )}
-                    {fetchingAllowance && !approveBusy && (
-                      <p className="text-[10px] text-black/40">
-                        Refreshing allowance…
-                      </p>
-                    )}
-                  </div>
-                )}
-
-              {loadingAllowance && isConnected && provider?.registry_provider_id && (
-                <p className="text-sm text-black/40">Checking USDC allowance…</p>
-              )}
-
               <div className="flex flex-col gap-1.5">
-                <div className="text-[10px] uppercase tracking-widest font-bold text-black/40">
-                  Step 2 · Your question
-                </div>
                 <label className="text-xs font-semibold uppercase tracking-wider text-black/50">
                   Your question <span className="text-[#E85A00]">*</span>
                 </label>
@@ -621,11 +604,38 @@ export default function CreateJobPage() {
                   disabled={loadingProvider || isTxBusy || approveBusy}
                 />
                 <span className="text-[10px] text-black/35">
-                  Sent as <span className="font-mono">input.uri</span> and{" "}
-                  <span className="font-mono">input_hash</span> (plain text, per{" "}
-                  <span className="font-mono">job.json</span>).
+                  Sent as <span className="font-mono">input.prompt</span>;{" "}
+                  <span className="font-mono">input_hash</span> is SHA-256 of
+                  this text (bytes32).
                 </span>
               </div>
+
+              {loadingAllowance &&
+                isConnected &&
+                provider?.registry_provider_id && (
+                  <p className="text-sm text-black/40">
+                    Checking USDC allowance…
+                  </p>
+                )}
+
+              {needsApproval && (
+                <p className="text-sm text-black/60 leading-relaxed max-w-lg">
+                  Approve{" "}
+                  <span className="font-semibold">
+                    {allowance!.requiredLabel} USDC
+                  </span>{" "}
+                  below, then click Create Job.
+                  <span className="block mt-1 text-black/45 text-xs">
+                    Current allowance: {allowance!.allowanceLabel} USDC
+                  </span>
+                </p>
+              )}
+
+              {allowanceError && isConnected && (
+                <p className="text-sm text-red-600">
+                  Could not check USDC allowance. Refresh the page or try again.
+                </p>
+              )}
 
               {phase === "error" && (
                 <div
@@ -639,29 +649,59 @@ export default function CreateJobPage() {
                 </div>
               )}
 
-              <div className="flex items-center gap-4">
-                <button
-                  type="submit"
-                  disabled={!canSubmit}
-                  className="btn-cyber disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {phase === "switching"
-                    ? "Switching Network…"
-                    : phase === "signing"
-                      ? "Awaiting Signature…"
-                      : "Create Job"}
-                  {phase === "form" && <ArrowRight size={13} />}
-                </button>
-                {!isConnected && (
-                  <span className="text-[11px] text-black/40">
-                    Connect a wallet to submit.
-                  </span>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-4 flex-wrap">
+                  {!isConnected ? (
+                    <span className="text-[11px] text-black/40">
+                      Connect a wallet to continue.
+                    </span>
+                  ) : loadingAllowance ? (
+                    <span className="text-[11px] text-black/40">
+                      Checking USDC allowance…
+                    </span>
+                  ) : !provider?.registry_provider_id ? null : hasSufficientAllowance ? (
+                    <button
+                      type="submit"
+                      disabled={!canSubmit}
+                      className="btn-cyber disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {phase === "switching"
+                        ? "Switching Network…"
+                        : phase === "signing"
+                          ? "Awaiting Signature…"
+                          : "Create Job"}
+                      {phase === "form" && <ArrowRight size={13} />}
+                    </button>
+                  ) : needsApproval ? (
+                    <button
+                      type="button"
+                      onClick={handleApproveUsdc}
+                      disabled={!canApprove}
+                      className="btn-cyber disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {approveBusy ? "Awaiting Approval…" : "Approve USDC"}
+                      {!approveBusy && <ArrowRight size={13} />}
+                    </button>
+                  ) : null}
+                </div>
+                {approveTxHash && (
+                  <a
+                    href={`https://testnet.arcscan.app/tx/${approveTxHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-mono text-[#E85A00] hover:underline flex items-center gap-1 break-all"
+                  >
+                    {approveTxHash}
+                    <ExternalLink size={12} />
+                  </a>
                 )}
-                {isConnected && !allowanceReady && !loadingAllowance && (
-                  <span className="text-[11px] text-black/40">
-                    Approve USDC first.
-                  </span>
-                )}
+                {fetchingAllowance &&
+                  !approveBusy &&
+                  hasSufficientAllowance && (
+                    <p className="text-[10px] text-black/40">
+                      Refreshing allowance…
+                    </p>
+                  )}
               </div>
             </form>
           )}

@@ -8,6 +8,8 @@
     "create:job": "tsx scripts/create-job.ts",
     "register:provider": "tsx scripts/register-provider.ts",
     "start:job": "tsx scripts/start-job.ts",
+    "worker": "tsx scripts/provider-worker.ts",
+    "worker:once": "tsx scripts/provider-worker.ts --once",
     "accept:job": "tsx scripts/accept-job.ts",
     "refund:queue": "tsx scripts/refund-after-queue-timeout.ts",
     "refund:final": "tsx scripts/refund-after-final-timeout.ts",

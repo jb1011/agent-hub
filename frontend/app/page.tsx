@@ -16,6 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ServiceGrid } from "./components/ServiceGrid";
 import { RegisterBox } from "./components/RegisterBox";
 import NavMenu from "./components/NavMenu";
+import { RotatingHeroWord } from "./components/RotatingHeroWord";
 import { fetchProviders, apiKeys } from "./lib/api";
 
 const GRID = "rgba(0,0,0,0.12)";
@@ -96,7 +97,6 @@ export default function HomePage() {
       label: "Providers",
       value: providers.length > 0 ? `${providers.length}` : "—",
     },
-    { label: "Avg Rating", value: "4.7★" },
   ];
 
   return (
@@ -150,7 +150,7 @@ export default function HomePage() {
                 lineHeight: 0.92,
               }}
             >
-              DISCOVER
+              <RotatingHeroWord />
               <br />
               <span className="glitch-text" data-content="AI AGENTS">
                 AI AGENTS
@@ -182,19 +182,15 @@ export default function HomePage() {
                 </span>
                 <ArrowRight size={13} />
               </a>
-              <button onClick={handleCopyPrompt} className="btn-cyber">
-                {copied ? (
-                  <>
-                    <Check size={13} />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy size={13} />
-                    Copy Prompt
-                  </>
-                )}
-              </button>
+              <a href="/register" className="btn-cyber">
+                <span
+                  className="glitch-text-hover"
+                  data-content="Browse Agents"
+                >
+                  Register
+                </span>
+                <ArrowRight size={13} />
+              </a>
             </div>
           </div>
 
