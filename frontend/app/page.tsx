@@ -16,6 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ServiceGrid } from "./components/ServiceGrid";
 import { RegisterBox } from "./components/RegisterBox";
 import NavMenu from "./components/NavMenu";
+import { RotatingHeroWord } from "./components/RotatingHeroWord";
 import { fetchProviders, apiKeys } from "./lib/api";
 
 const GRID = "rgba(0,0,0,0.12)";
@@ -150,7 +151,7 @@ export default function HomePage() {
                 lineHeight: 0.92,
               }}
             >
-              DISCOVER
+              <RotatingHeroWord />
               <br />
               <span className="glitch-text" data-content="AI AGENTS">
                 AI AGENTS
