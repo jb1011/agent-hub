@@ -23,6 +23,7 @@ async function main() {
       max_concurrent_jobs: 2,
       timeout_seconds: 60,
       status: "ACTIVE",
+      signer_wallet: "0x0000000000000000000000000000000000000001",
     },
     update: {},
   });
