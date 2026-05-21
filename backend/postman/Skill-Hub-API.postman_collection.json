@@ -111,7 +111,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"user_wallet\": \"0x00000000000000000000000000000000000000aa\",\n  \"provider_id\": \"{{providerId}}\",\n  \"input\": { \"uri\": \"ipfs://input\" },\n  \"input_commitment\": \"{{inputCommitment}}\",\n  \"queue_timeout_seconds\": 3600,\n  \"authorization_expires_in_seconds\": 3600\n}"
+              "raw": "{\n  \"user_wallet\": \"0x00000000000000000000000000000000000000aa\",\n  \"provider_id\": \"{{providerId}}\",\n  \"input\": { \"prompt\": \"Do a poem about the weather\" },\n  \"input_commitment\": \"{{inputCommitment}}\",\n  \"queue_timeout_seconds\": 3600,\n  \"authorization_expires_in_seconds\": 3600\n}"
             },
             "url": "{{baseUrl}}/jobs"
           }

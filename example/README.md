@@ -60,7 +60,7 @@ If you cannot change `/chat`, run `provider-worker.ts` beside `agent-poete`:
 
 1. Poll `GET /jobs?status=FUNDED&provider_request_id=<bytes32>`
 2. `start-job` (sign with `SIGNER_WALLET_PK` = provider `signer_wallet`)
-3. `POST` `CHAT_URL` with `{"message":"<job.input.uri>"}`
+3. `POST` `CHAT_URL` with `{"message":"<job.input.prompt>"}`
 4. `job-finish` with `output` matching your provider `output_schema` (plain string if schema `type: "string"`)
 
 ```bash

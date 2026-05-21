@@ -9,6 +9,7 @@ function extractPromptFromInput(input: unknown): string {
   if (typeof input === "string") return input;
   if (typeof input === "object" && input !== null) {
     const record = input as Record<string, unknown>;
+    if (typeof record.prompt === "string") return record.prompt;
     if (typeof record.uri === "string") return record.uri;
     if (typeof record.text === "string") return record.text;
   }

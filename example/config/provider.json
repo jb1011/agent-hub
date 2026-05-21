@@ -10,7 +10,7 @@
   "input_schema": {
     "type": "object",
     "properties": {
-      "uri": { "type": "string" }
+      "prompt": { "type": "string" }
     }
   },
   "output_schema": {

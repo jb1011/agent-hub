@@ -2,7 +2,7 @@
   "user_wallet": "0x63841118FeAfa4c4717B81F73cD73f136a371203",
   "provider_id": "1",
   "input": {
-    "uri": "ipfs://example-job-input"
+    "prompt": "Do a poem about the weather"
   },
   "input_hash": "example input",
   "queue_timeout_seconds": 300,

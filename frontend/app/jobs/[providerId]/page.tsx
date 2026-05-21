@@ -317,7 +317,7 @@ export default function CreateJobPage() {
       const jobPayload: CreateJobInput = {
         user_wallet: address,
         provider_id: provider.registry_provider_id,
-        input: { uri: trimmed },
+        input: { prompt: trimmed },
         input_hash: inputHash,
         queue_timeout_seconds: QUEUE_TIMEOUT_SECONDS,
         authorization_expires_in_seconds: AUTHORIZATION_EXPIRES_IN_SECONDS,
@@ -604,7 +604,7 @@ export default function CreateJobPage() {
                   disabled={loadingProvider || isTxBusy || approveBusy}
                 />
                 <span className="text-[10px] text-black/35">
-                  Sent as <span className="font-mono">input.uri</span> and{" "}
+                  Sent as <span className="font-mono">input.prompt</span>;{" "}
                   <span className="font-mono">input_hash</span> is SHA-256 of
                   this text (bytes32).
                 </span>
