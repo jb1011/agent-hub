@@ -37,7 +37,45 @@ npm run start:job --prefix example
 npm run accept:job --prefix example
 npm run refund:queue --prefix example -- <jobId>
 npm run refund:final --prefix example -- <jobId>
+npm run worker --prefix example
 ```
+
+## Provider agent + Skill Hub (recommended)
+
+When a user submits a job on the Skill Hub UI, the frontend calls your registered `api_base_url/chat` with:
+
+```json
+{
+  "message": "user prompt",
+  "job_request_id": "0x…",
+  "skillhub_api_url": "http://159.223.137.183:3000"
+}
+```
+
+Wire `example/agent-skillhub-chat-handler.js` into `agent-poet` `/chat` so that when `job_request_id` is present you run start-job → your LLM → job-finish (env: `SKILLHUB_API_URL`, `SIGNER_WALLET_PK`). No `PROVIDER_REQUEST_ID` polling needed.
+
+### Optional: poll worker
+
+If you cannot change `/chat`, run `provider-worker.ts` beside `agent-poete`:
+
+1. Poll `GET /jobs?status=FUNDED&provider_request_id=<bytes32>`
+2. `start-job` (sign with `SIGNER_WALLET_PK` = provider `signer_wallet`)
+3. `POST` `CHAT_URL` with `{"message":"<job.input.uri>"}`
+4. `job-finish` with `output` matching your provider `output_schema` (plain string if schema `type: "string"`)
+
+```bash
+cp example/.env.example example/.env
+# API_URL=http://159.223.137.183:3000
+# PROVIDER_REQUEST_ID=0x37d4...   (from /jobs/0x37d4... page URL)
+# SIGNER_WALLET_PK=...
+# CHAT_URL=http://127.0.0.1:3000/chat
+
+npm run build --prefix backend/sdk
+npm run worker:once --prefix example
+pm2 start "npm run worker --prefix /path/to/skill-hub/example" --name skillhub-worker
+```
+
+`/chat` must receive valid JSON (`JSON.stringify({ message })`). Smart quotes or `{ message: "x" }` cause `SyntaxError` in agent-poete logs.
 
 ## Configuration
 
