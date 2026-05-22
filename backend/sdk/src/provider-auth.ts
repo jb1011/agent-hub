@@ -2,7 +2,7 @@ import { getAddress, keccak256, toUtf8Bytes } from "ethers";
 import type { ProviderRequestAuthOptions, ProviderRequestHeaders } from "./types.js";
 
 const PROVIDER_AUTH_ROUTES = [
-  "/start-authorization-request",
+  "/start-next-job-request",
   "/start-job",
   "/job-finish",
 ] as const;

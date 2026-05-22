@@ -10,7 +10,7 @@ export interface SkillHubClientOptions {
    * Provider request signing configuration.
    *
    * When present, the SDK automatically adds the provider auth headers to
-   * POST /jobs/:id/start-authorization-request, /start-job and /job-finish.
+   * POST /jobs/start-next-job-request, /jobs/:id/start-job and /jobs/:id/job-finish.
    */
   providerAuth?: ProviderRequestAuthOptions;
 }

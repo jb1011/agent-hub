@@ -29,7 +29,7 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "const providerAuthRoutes = [\"/start-authorization-request\", \"/start-job\", \"/job-finish\"];",
+          "const providerAuthRoutes = [\"/start-next-job-request\", \"/start-job\", \"/job-finish\"];",
           "const requestUrl = pm.variables.replaceIn(pm.request.url.toString());",
           "const pathname = requestUrl.split(\"?\")[0];",
           "const isProviderAuthRoute = providerAuthRoutes.some((suffix) => pathname.endsWith(suffix));",
@@ -178,7 +178,7 @@
           }
         },
         {
-          "name": "Start authorization request",
+          "name": "Start next job request",
           "request": {
             "method": "POST",
             "header": [
@@ -195,9 +195,25 @@
               "mode": "raw",
               "raw": "{\n  \"expires_at\": {{signatureExpiresAt}}\n}"
             },
-            "url": "{{baseUrl}}/jobs/{{jobId}}/start-authorization-request",
-            "description": "Returns the EIP-712 typed data that the provider must sign for `startJob` and the unsigned `start_job_args`."
-          }
+            "url": "{{baseUrl}}/jobs/start-next-job-request",
+            "description": "Returns the EIP-712 typed data that the provider must sign for `startJob` for its next funded job. The backend derives the provider from the signed headers and selects the smallest on-chain `job_id` for that provider."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.start_job_args && body.start_job_args.job_id) {",
+                  "    pm.collectionVariables.set(\"jobId\", body.start_job_args.job_id);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Start job args",

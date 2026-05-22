@@ -26,24 +26,44 @@ function logJob(label: string, job: Job) {
 }
 
 type StartJobConfig = AuthorizationExpiryInput & {
-  job_id: string;
+  provider_id?: string;
+  job_id?: string;
 };
 
 const config = await readJsonConfig<StartJobConfig>("./config/start-job.json");
-const { job_id, ...authorizationExpiry } = config;
+const { provider_id, job_id, ...authorizationExpiry } = config;
 
 console.log(`Skill Hub API: ${API_URL}`);
-console.log(`Job id from config: ${job_id}`);
 
-const jobBefore = await client.jobs.get(job_id);
-logJob("jobs.get (before start)", jobBefore);
+let providerId = provider_id;
+let expectedJobId = job_id;
 
-const providerId = jobBefore.provider.request_id;
+if (!providerId && job_id) {
+  console.log(`Job id from config: ${job_id}`);
+  const jobBefore = await client.jobs.get(job_id);
+  logJob("jobs.get (before start)", jobBefore);
+  providerId = jobBefore.provider.request_id;
+  expectedJobId = jobBefore.job_id ?? jobBefore.request_id;
+}
+
+if (!providerId) {
+  throw new Error("start-job config must include provider_id, or job_id to derive provider_id");
+}
+
+console.log(`Provider id for start-next-job-request: ${providerId}`);
 const signedClient = providerClient(providerId);
 
-console.log(`Requesting start authorization for job ${job_id}...`);
+console.log("Requesting start authorization for next provider job...");
 
-const authorization = await signedClient.jobs.requestStartAuthorization(job_id, authorizationExpiry);
+const authorization = await signedClient.jobs.requestStartNextJob(authorizationExpiry);
+const selectedJobId = authorization.start_job_args.job_id;
+
+if (expectedJobId && expectedJobId !== selectedJobId) {
+  throw new Error(
+    `Backend selected job_id ${selectedJobId}, but config expected ${expectedJobId}. ` +
+    "Remove job_id from start-job.json to process the next provider job."
+  );
+}
 
 console.log("\nStart authorization typed data:");
 console.log(JSON.stringify(authorization, null, 2));
@@ -56,7 +76,7 @@ const provider_signature = await signTypedData(
 console.log("\nProvider signature:");
 console.log(provider_signature);
 
-const started = await signedClient.jobs.startJob(job_id, {
+const started = await signedClient.jobs.startJob(selectedJobId, {
   provider_signature,
   ...authorizationExpiry,
 });
@@ -78,7 +98,7 @@ const finishInput: FinishJobInput = {
 console.log("\nComputed output:");
 console.log(JSON.stringify(finishInput.output, null, 2));
 
-const finished = await signedClient.jobs.finishJob(job_id, finishInput);
+const finished = await signedClient.jobs.finishJob(selectedJobId, finishInput);
 
 console.log("\nJob finished:");
 console.log(JSON.stringify(finished, null, 2));

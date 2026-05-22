@@ -28,7 +28,7 @@ console.log(health); // { ok: true }
 | `baseUrl` | `string` | `"http://localhost:3000"` | Base URL of the API |
 | `providerAuth` | `ProviderRequestAuthOptions` | `undefined` | Adds signed provider headers to provider job calls |
 
-Provider calls (`requestStartAuthorization`, `startJob`, `finishJob`) require signed request headers:
+Provider calls (`requestStartNextJob`, `startJob`, `finishJob`) require signed request headers:
 
 ```ts
 import { SkillHubClient } from "@skill-hub/sdk";
@@ -60,7 +60,7 @@ The SDK mirrors the REST API resources:
 | Resource | Methods |
 | -------- | ------- |
 | `client.providers` | `list`, `get`, `create`, `update`, `delete` |
-| `client.jobs` | `list`, `get`, `create`, `requestStartAuthorization`, `startJob`, `finishJob`, `requestAcceptance`, `acceptance`, `refundAfterQueueTimeout`, `refundAfterFinalTimeout` |
+| `client.jobs` | `list`, `get`, `create`, `requestStartNextJob`, `requestStartAuthorization` (deprecated), `startJob`, `finishJob`, `requestAcceptance`, `acceptance`, `refundAfterQueueTimeout`, `refundAfterFinalTimeout` |
 
 `client.providers.create(input)`, `client.jobs.create(input)`, `client.jobs.refundAfterQueueTimeout(id)`, and `client.jobs.refundAfterFinalTimeout(id)` return only a prepared contract transaction:
 

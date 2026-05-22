@@ -25,8 +25,8 @@ import {
   buildRefundAfterQueueTimeoutTransaction,
 } from "../lib/escrow-transaction.js";
 import { logProviderJobPayload } from "../lib/log-job-payload.js";
-import { verifyProviderRequestHeaders } from "../lib/provider-request-auth.js";
-import { uint256StringSchema } from "../lib/uint256.js";
+import { getProviderIdHeader, verifyProviderRequestHeaders } from "../lib/provider-request-auth.js";
+import { isUint256String, uint256StringSchema } from "../lib/uint256.js";
 
 const JOB_STATUS = [
   "CREATED", "FUNDED", "RUNNING", "SUBMITTED",
@@ -35,9 +35,6 @@ const JOB_STATUS = [
 
 const CAPACITY_JOB_STATUSES: JobStatus[] = [
   JobStatus.RUNNING,
-  JobStatus.SUBMITTED,
-  JobStatus.ACCEPTED,
-  JobStatus.DISPUTED,
 ];
 
 const REVIEW_TIMEOUT_SETTLEMENT_JOB_STATUSES: JobStatus[] = [
@@ -156,6 +153,38 @@ async function getJobWithProvider(id: string) {
     where: { OR: [{ request_id: id }, { job_id: id }] },
     include: { provider: true },
   });
+}
+
+async function getNextStartableJobForProvider(providerRequestId: string) {
+  const jobs = await prisma.job.findMany({
+    where: {
+      provider_request_id: providerRequestId,
+      status: JobStatus.FUNDED,
+      job_id: { not: null },
+      input_hash: { not: null },
+      OR: [
+        { queue_deadline: null },
+        { queue_deadline: { gt: new Date() } },
+      ],
+    },
+    include: { provider: true },
+  });
+
+  return jobs.reduce<(typeof jobs)[number] | null>((next, job) => {
+    if (!job.job_id || !isUint256String(job.job_id)) return next;
+    if (!next?.job_id) return job;
+    return BigInt(job.job_id) < BigInt(next.job_id) ? job : next;
+  }, null);
+}
+
+async function providerFromAuthHeader(providerId: string) {
+  if (isBytes32(providerId)) {
+    return prisma.provider.findUnique({ where: { request_id: providerId } });
+  }
+  if (isUint256String(providerId)) {
+    return prisma.provider.findUnique({ where: { registry_provider_id: providerId } });
+  }
+  return null;
 }
 
 async function runningCapacityForProvider(providerRequestId: string) {
@@ -758,11 +787,10 @@ export async function jobsRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post<{ Params: { id: string } }>("/jobs/:id/start-authorization-request", {
+  app.post("/jobs/start-next-job-request", {
     schema: {
       tags: ["Jobs"],
-      summary: "Build the EIP-712 payload the provider signs before startJob",
-      params: idParamsSchema,
+      summary: "Build the EIP-712 payload the provider signs before starting its next job",
       body: authExpirySchema,
       response: {
         200: z.object({
@@ -783,10 +811,19 @@ export async function jobsRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const parsed = authExpirySchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
-    const job = await getJobWithProvider(req.params.id);
-    if (!job) return notFound(reply);
-    const auth = verifyProviderRequestHeaders(req, reply, job.provider);
+    const providerId = getProviderIdHeader(req);
+    if (!providerId) {
+      return reply.status(401).send({ error: "missing_header_x-provider-id" });
+    }
+    if (!isBytes32(providerId) && !isUint256String(providerId)) {
+      return reply.status(400).send({ error: "provider_id_invalid" });
+    }
+    const provider = await providerFromAuthHeader(providerId);
+    if (!provider) return notFound(reply, "provider_not_found");
+    const auth = verifyProviderRequestHeaders(req, reply, provider);
     if (!auth.ok) return auth.reply;
+    const job = await getNextStartableJobForProvider(provider.request_id);
+    if (!job) return notFound(reply, "next_job_not_found");
     const notStartable = await ensureStartable(job);
     if (notStartable) return conflict(reply, notStartable);
 

@@ -53,6 +53,10 @@ function header(req: FastifyRequest, name: string): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+export function getProviderIdHeader(req: FastifyRequest): string | null {
+  return header(req, "x-provider-id");
+}
+
 function rawQuery(req: FastifyRequest): string {
   const rawUrl = req.raw.url ?? req.url;
   const queryStart = rawUrl.indexOf("?");

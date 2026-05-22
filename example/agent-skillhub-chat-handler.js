@@ -101,17 +101,29 @@ async function runSkillHubJob(jobRequestId, message, runChat) {
   if (!providerId) {
     throw new Error(`Skill Hub job ${jobRequestId} response missing provider.request_id`);
   }
+  if (!job.job_id) {
+    throw new Error(`Skill Hub job ${jobRequestId} is not funded on-chain yet`);
+  }
 
   const auth = await skillhubProviderFetch(
-    `/jobs/${encodedJobId}/start-authorization-request`,
+    "/jobs/start-next-job-request",
     { expires_in_seconds: 300 },
     providerId,
   );
+  const selectedJobId = auth.start_job_args?.job_id;
+  if (!selectedJobId) {
+    throw new Error("Skill Hub start-next-job-request response missing start_job_args.job_id");
+  }
+  if (String(job.job_id) !== String(selectedJobId)) {
+    throw new Error(
+      `Skill Hub selected next job ${selectedJobId}, but chat requested ${job.job_id}`
+    );
+  }
 
   const provider_signature = await signStartJob(auth.typed_data, SIGNER_WALLET_PK);
 
   await skillhubProviderFetch(
-    `/jobs/${encodedJobId}/start-job`,
+    `/jobs/${encodeURIComponent(selectedJobId)}/start-job`,
     { provider_signature, expires_in_seconds: 300 },
     providerId,
   );
@@ -119,7 +131,7 @@ async function runSkillHubJob(jobRequestId, message, runChat) {
   const reply = await runChat(message);
 
   await skillhubProviderFetch(
-    `/jobs/${encodedJobId}/job-finish`,
+    `/jobs/${encodeURIComponent(selectedJobId)}/job-finish`,
     { output: reply, expires_in_seconds: 3600 },
     providerId,
   );
