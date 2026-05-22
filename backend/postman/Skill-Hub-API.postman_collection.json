@@ -2,11 +2,25 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "name": "Skill Hub API",
-    "description": "Fastify backend collection for providers and jobs. Import it and set the `baseUrl` variable if needed.",
+    "description": "Fastify backend collection for wallet auth, providers and jobs. Import it and set the `baseUrl` variable if needed.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "authWalletAddress", "value": "" },
+    { "key": "authPrivateKey", "value": "" },
+    { "key": "authChainId", "value": "1" },
+    { "key": "authChallengeId", "value": "" },
+    { "key": "authDomain", "value": "localhost" },
+    { "key": "authUri", "value": "http://localhost:3000" },
+    { "key": "authNonce", "value": "" },
+    { "key": "authIssuedAt", "value": "" },
+    { "key": "authExpiresAt", "value": "" },
+    { "key": "authStatement", "value": "Sign in to AgentHub." },
+    { "key": "authSiweMessage", "value": "" },
+    { "key": "authSiweSignature", "value": "" },
+    { "key": "accessToken", "value": "" },
+    { "key": "accessTokenExpiresIn", "value": "" },
     { "key": "providerId", "value": "1" },
     { "key": "jobId", "value": "" },
     { "key": "inputCommitment", "value": "0x1111111111111111111111111111111111111111111111111111111111111111" },
@@ -87,6 +101,160 @@
             "header": [],
             "url": "{{baseUrl}}/health",
             "description": "Response: { \"ok\": true }"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Create wallet challenge",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet_address\": \"{{authWalletAddress}}\",\n  \"chain_id\": {{authChainId}}\n}"
+            },
+            "url": "{{baseUrl}}/auth/wallet/challenge",
+            "description": "Creates a SIWE challenge. Set `authWalletAddress` and `authChainId` first. The test script stores challenge fields into collection variables."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set(\"authChallengeId\", body.challenge_id);",
+                  "  pm.collectionVariables.set(\"authWalletAddress\", body.wallet_address);",
+                  "  pm.collectionVariables.set(\"authChainId\", String(body.chain_id));",
+                  "  pm.collectionVariables.set(\"authDomain\", body.domain);",
+                  "  pm.collectionVariables.set(\"authUri\", body.uri);",
+                  "  pm.collectionVariables.set(\"authNonce\", body.nonce);",
+                  "  pm.collectionVariables.set(\"authIssuedAt\", body.issued_at);",
+                  "  pm.collectionVariables.set(\"authExpiresAt\", body.expires_at);",
+                  "  pm.collectionVariables.set(\"authStatement\", body.statement);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wallet login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"challenge_id\": \"{{authChallengeId}}\",\n  \"message\": \"\",\n  \"signature\": \"{{authSiweSignature}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/wallet/login",
+            "description": "Verifies the SIWE signature, stores the HttpOnly refresh cookie, and returns an access token. If `authPrivateKey` is set, the pre-request script builds and signs `authSiweMessage`; otherwise paste `authSiweMessage` and `authSiweSignature` manually. Do not use a production private key in Postman."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const privateKey = pm.variables.get(\"authPrivateKey\");",
+                  "let siweMessage = pm.variables.get(\"authSiweMessage\");",
+                  "let siweSignature = pm.variables.get(\"authSiweSignature\");",
+                  "if (privateKey) {",
+                  "  const ethersPackage = pm.require(\"npm:ethers@6.16.0\");",
+                  "  const ethers = ethersPackage.ethers || ethersPackage;",
+                  "  const siwePackage = pm.require(\"npm:siwe@3.0.0\");",
+                  "  const SiweMessage = siwePackage.SiweMessage;",
+                  "  const wallet = new ethers.Wallet(privateKey);",
+                  "  const walletAddress = ethers.getAddress(pm.variables.get(\"authWalletAddress\") || wallet.address);",
+                  "  if (walletAddress !== wallet.address) throw new Error(\"authWalletAddress does not match authPrivateKey\");",
+                  "  const message = new SiweMessage({",
+                  "    domain: pm.variables.get(\"authDomain\"),",
+                  "    address: walletAddress,",
+                  "    statement: pm.variables.get(\"authStatement\"),",
+                  "    uri: pm.variables.get(\"authUri\"),",
+                  "    version: \"1\",",
+                  "    chainId: Number(pm.variables.get(\"authChainId\")),",
+                  "    nonce: pm.variables.get(\"authNonce\"),",
+                  "    issuedAt: pm.variables.get(\"authIssuedAt\"),",
+                  "    expirationTime: pm.variables.get(\"authExpiresAt\")",
+                  "  });",
+                  "  const preparedMessage = message.prepareMessage();",
+                  "  const signature = wallet.signingKey.sign(ethers.hashMessage(preparedMessage)).serialized;",
+                  "  siweMessage = preparedMessage;",
+                  "  siweSignature = signature;",
+                  "  pm.collectionVariables.set(\"authSiweMessage\", preparedMessage);",
+                  "  pm.collectionVariables.set(\"authSiweSignature\", signature);",
+                  "}",
+                  "if (siweMessage && siweSignature) {",
+                  "  pm.request.body.update(JSON.stringify({",
+                  "    challenge_id: pm.variables.get(\"authChallengeId\"),",
+                  "    message: siweMessage,",
+                  "    signature: siweSignature",
+                  "  }, null, 2));",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set(\"accessToken\", body.access_token);",
+                  "  pm.collectionVariables.set(\"accessTokenExpiresIn\", String(body.expires_in));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh access token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/refresh",
+            "description": "Uses the `refresh_token` HttpOnly cookie set by Wallet login, rotates it, and stores the new access token."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set(\"accessToken\", body.access_token);",
+                  "  pm.collectionVariables.set(\"accessTokenExpiresIn\", String(body.expires_in));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/logout",
+            "description": "Revokes the current refresh-token session and clears the refresh cookie. Returns `{ \"ok\": true }` even if the cookie is absent or invalid."
+          }
+        },
+        {
+          "name": "Get me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/me",
+            "description": "Protected route. Requires `accessToken` from Wallet login or Refresh access token."
           }
         }
       ]

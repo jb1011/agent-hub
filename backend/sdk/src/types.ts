@@ -13,6 +13,13 @@ export interface SkillHubClientOptions {
    * POST /jobs/start-next-job-request, /jobs/:id/start-job and /jobs/:id/job-finish.
    */
   providerAuth?: ProviderRequestAuthOptions;
+
+  /**
+   * User bearer-token authentication configuration.
+   *
+   * When present, the SDK adds `Authorization: Bearer <token>` to requests.
+   */
+  userAuth?: UserAuthOptions;
 }
 
 export interface ProviderRequestAuthOptions {
@@ -31,6 +38,10 @@ export interface ProviderRequestHeaders {
   "X-Signature": string;
   "X-Nonce": string;
   "X-Query-Hash": string;
+}
+
+export interface UserAuthOptions {
+  accessToken: string | (() => string | Promise<string>);
 }
 
 export interface HealthResponse {

@@ -122,3 +122,47 @@ model Escrow {
   @@index([escrow_status])
   @@index([request_id])
 }
+
+model AuthChallenge {
+  id             String    @id
+  wallet_address String
+  chain_id       BigInt    @db.BigInt
+  nonce          String    @unique
+  domain         String
+  uri            String
+  statement      String
+  issued_at      DateTime  @db.Timestamptz
+  expires_at     DateTime  @db.Timestamptz
+  consumed_at    DateTime? @db.Timestamptz
+  created_at     DateTime  @default(now()) @db.Timestamptz
+
+  @@index([wallet_address])
+  @@map("auth_challenges")
+}
+
+model User {
+  id             String        @id
+  wallet_address String        @unique
+  status         String        @default("ACTIVE")
+  created_at     DateTime      @default(now()) @db.Timestamptz
+  updated_at     DateTime      @default(now()) @updatedAt @db.Timestamptz
+  sessions       UserSession[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id                 String    @id
+  user_id            String
+  user               User      @relation(fields: [user_id], references: [id], onDelete: Restrict)
+  refresh_token_hash String    @unique
+  created_at         DateTime  @default(now()) @db.Timestamptz
+  expires_at         DateTime  @db.Timestamptz
+  revoked_at         DateTime? @db.Timestamptz
+  last_used_at       DateTime? @db.Timestamptz
+  user_agent         String?
+  ip_hash            String?
+
+  @@index([user_id])
+  @@map("user_sessions")
+}

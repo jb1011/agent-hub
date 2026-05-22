@@ -9,6 +9,7 @@ export type {
   SkillHubClientOptions,
   ProviderRequestAuthOptions,
   ProviderRequestHeaders,
+  UserAuthOptions,
   HealthResponse,
   PreparedContractTransaction,
   // Providers

@@ -12,6 +12,7 @@ function requestBodyString(init?: RequestInit): string {
 export class SkillHubClient {
   private baseUrl: string;
   private providerAuth: SkillHubClientOptions["providerAuth"];
+  private userAuth: SkillHubClientOptions["userAuth"];
 
   /** Provider CRUD operations */
   readonly providers: ProvidersResource;
@@ -22,6 +23,7 @@ export class SkillHubClient {
   constructor(options: SkillHubClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? "http://localhost:3000").replace(/\/$/, "");
     this.providerAuth = options.providerAuth;
+    this.userAuth = options.userAuth;
     this.providers = new ProvidersResource(this.request.bind(this));
     this.jobs = new JobsResource(this.request.bind(this));
   }
@@ -40,6 +42,13 @@ export class SkillHubClient {
       for (const [key, value] of Object.entries(authHeaders)) {
         headers.set(key, value);
       }
+    }
+
+    if (this.userAuth) {
+      const accessToken = typeof this.userAuth.accessToken === "function"
+        ? await this.userAuth.accessToken()
+        : this.userAuth.accessToken;
+      headers.set("Authorization", `Bearer ${accessToken}`);
     }
 
     const res = await fetch(url, {

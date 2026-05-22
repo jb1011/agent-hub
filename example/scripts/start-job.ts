@@ -1,7 +1,7 @@
 import type { AuthorizationExpiryInput, FinishJobInput, Job } from "../../backend/sdk/dist/index.js";
 import type { Eip712TypedData } from "../lib/transactions.ts";
 import { readJsonConfig } from "../lib/config.ts";
-import { API_URL, client, providerClient } from "../lib/sdk-client.ts";
+import { API_URL, providerClient, userClient } from "../lib/sdk-client.ts";
 import { signTypedData } from "../lib/transactions.ts";
 
 function extractPromptFromInput(input: unknown): string {
@@ -40,7 +40,8 @@ let expectedJobId = job_id;
 
 if (!providerId && job_id) {
   console.log(`Job id from config: ${job_id}`);
-  const jobBefore = await client.jobs.get(job_id);
+  const signedUserClient = await userClient();
+  const jobBefore = await signedUserClient.jobs.get(job_id);
   logJob("jobs.get (before start)", jobBefore);
   providerId = jobBefore.provider.request_id;
   expectedJobId = jobBefore.job_id ?? jobBefore.request_id;

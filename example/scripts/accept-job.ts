@@ -1,7 +1,7 @@
 import type { AcceptanceInput, OutputCommitmentInput } from "../../backend/sdk/dist/index.js";
 import type { Eip712TypedData } from "../lib/transactions.ts";
 import { readJsonConfig } from "../lib/config.ts";
-import { API_URL, client } from "../lib/sdk-client.ts";
+import { API_URL, userClient } from "../lib/sdk-client.ts";
 import { signTypedData } from "../lib/transactions.ts";
 
 type AcceptanceConfig = OutputCommitmentInput & {
@@ -14,7 +14,8 @@ const { job_id, ...outputCommitment } = config;
 console.log(`Skill Hub API: ${API_URL}`);
 console.log(`Requesting acceptance typed data for job ${job_id}...`);
 
-const acceptanceRequest = await client.jobs.requestAcceptance(job_id, outputCommitment);
+const signedUserClient = await userClient();
+const acceptanceRequest = await signedUserClient.jobs.requestAcceptance(job_id, outputCommitment);
 
 console.log("\nAcceptance typed data:");
 console.log(JSON.stringify(acceptanceRequest, null, 2));
@@ -35,7 +36,7 @@ const acceptanceInput: AcceptanceInput = {
 };
 
 console.log("\nSubmitting acceptance...");
-const accepted = await client.jobs.acceptance(job_id, acceptanceInput);
+const accepted = await signedUserClient.jobs.acceptance(job_id, acceptanceInput);
 
 console.log("\nJob accepted and settled:");
 console.log(JSON.stringify(accepted, null, 2));

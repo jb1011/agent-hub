@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "health": "tsx scripts/health.ts",
+    "auth:wallet": "tsx scripts/auth-wallet.ts",
     "providers:list": "tsx scripts/list-providers.ts",
     "create:job": "tsx scripts/create-job.ts",
     "register:provider": "tsx scripts/register-provider.ts",

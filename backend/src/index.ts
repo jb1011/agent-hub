@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import Fastify from "fastify";
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
@@ -15,6 +16,7 @@ import {
   startNoDeliveryAttestationWorker,
   startReviewTimeoutSettlementWorker,
 } from "./routes/jobs.js";
+import { authRoutes } from "./routes/auth.js";
 import { startEscrowJobCreatedListener } from "./listeners/escrow-job-created.js";
 import { startRegistryProviderRegisteredListener } from "./listeners/registry-provider-registered.js";
 
@@ -39,7 +41,8 @@ app.addContentTypeParser("application/json", { parseAs: "string" }, (req, body, 
   }
 });
 
-await app.register(cors, { origin: true });
+await app.register(cors, { origin: true, credentials: true });
+await app.register(cookie);
 
 await app.register(swagger, {
   transform: jsonSchemaTransform,
@@ -52,6 +55,7 @@ await app.register(swagger, {
       version: "0.1.0",
     },
     tags: [
+      { name: "Auth", description: "Wallet-first user authentication with SIWE" },
       { name: "Providers", description: "AI provider registration and management" },
       { name: "Jobs", description: "Job lifecycle: creation, status transitions, and authorisations" },
     ],
@@ -68,6 +72,7 @@ await app.register(swaggerUi, {
 
 app.get("/health", { schema: { tags: ["Health"] } }, async () => ({ ok: true }));
 
+await app.register(authRoutes);
 await app.register(providersRoutes);
 await app.register(jobsRoutes);
 
