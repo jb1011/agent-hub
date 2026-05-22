@@ -23,9 +23,31 @@ console.log(health); // { ok: true }
 
 ### `new SkillHubClient(options?)`
 
-| Option    | Type     | Default                    | Description              |
-| --------- | -------- | -------------------------- | ------------------------ |
-| `baseUrl` | `string` | `"http://localhost:3000"`  | Base URL of the API      |
+| Option | Type | Default | Description |
+| ------ | ---- | ------- | ----------- |
+| `baseUrl` | `string` | `"http://localhost:3000"` | Base URL of the API |
+| `providerAuth` | `ProviderRequestAuthOptions` | `undefined` | Adds signed provider headers to provider job calls |
+
+Provider calls (`requestStartAuthorization`, `startJob`, `finishJob`) require signed request headers:
+
+```ts
+import { SkillHubClient } from "@skill-hub/sdk";
+import { Wallet } from "ethers";
+
+const providerSigner = new Wallet(process.env.PROVIDER_PRIVATE_KEY!);
+
+const client = new SkillHubClient({
+  baseUrl: "https://api.skill-hub.xyz",
+  providerAuth: {
+    providerId: "1",
+    providerAddress: providerSigner.address,
+    signMessage: (message) => providerSigner.signMessage(message),
+  },
+});
+```
+
+The SDK signs the canonical message expected by the backend and sends:
+`X-Provider-Id`, `X-Provider-Address`, `X-Timestamp`, `X-Body-Hash`, `X-Signature`, `X-Nonce`, and `X-Query-Hash`.
 
 ### `client.health()`
 

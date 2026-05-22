@@ -25,6 +25,7 @@ import {
   buildRefundAfterQueueTimeoutTransaction,
 } from "../lib/escrow-transaction.js";
 import { logProviderJobPayload } from "../lib/log-job-payload.js";
+import { verifyProviderRequestHeaders } from "../lib/provider-request-auth.js";
 import { uint256StringSchema } from "../lib/uint256.js";
 
 const JOB_STATUS = [
@@ -772,6 +773,8 @@ export async function jobsRoutes(app: FastifyInstance) {
           }),
         }),
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
         500: z.object({ error: z.string() }),
@@ -781,8 +784,10 @@ export async function jobsRoutes(app: FastifyInstance) {
     const parsed = authExpirySchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const job = await getJobWithProvider(req.params.id);
+    if (!job) return notFound(reply);
+    const auth = verifyProviderRequestHeaders(req, reply, job.provider);
+    if (!auth.ok) return auth.reply;
     const notStartable = await ensureStartable(job);
-    if (notStartable === "job_not_found") return notFound(reply);
     if (notStartable) return conflict(reply, notStartable);
 
     try {
@@ -814,6 +819,8 @@ export async function jobsRoutes(app: FastifyInstance) {
           gas_used: z.string().nullable(),
         }),
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
         500: z.object({ error: z.string() }),
@@ -823,8 +830,10 @@ export async function jobsRoutes(app: FastifyInstance) {
     const parsed = providerSignatureSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const job = await getJobWithProvider(req.params.id);
+    if (!job) return notFound(reply);
+    const auth = verifyProviderRequestHeaders(req, reply, job.provider);
+    if (!auth.ok) return auth.reply;
     const notStartable = await ensureStartable(job);
-    if (notStartable === "job_not_found") return notFound(reply);
     if (notStartable) return conflict(reply, notStartable);
 
     try {
@@ -905,6 +914,8 @@ export async function jobsRoutes(app: FastifyInstance) {
           }),
         }),
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
         500: z.object({ error: z.string() }),
@@ -915,6 +926,8 @@ export async function jobsRoutes(app: FastifyInstance) {
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const job = await getJobWithProvider(req.params.id);
     if (!job) return notFound(reply);
+    const auth = verifyProviderRequestHeaders(req, reply, job.provider);
+    if (!auth.ok) return auth.reply;
     if (job.status !== JobStatus.RUNNING) {
       return conflict(reply, `job_not_running_status_${job.status}`);
     }

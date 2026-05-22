@@ -1,7 +1,7 @@
 import type { AuthorizationExpiryInput, FinishJobInput, Job } from "../../backend/sdk/dist/index.js";
 import type { Eip712TypedData } from "../lib/transactions.ts";
 import { readJsonConfig } from "../lib/config.ts";
-import { API_URL, client } from "../lib/sdk-client.ts";
+import { API_URL, client, providerClient } from "../lib/sdk-client.ts";
 import { signTypedData } from "../lib/transactions.ts";
 
 function extractPromptFromInput(input: unknown): string {
@@ -38,9 +38,12 @@ console.log(`Job id from config: ${job_id}`);
 const jobBefore = await client.jobs.get(job_id);
 logJob("jobs.get (before start)", jobBefore);
 
+const providerId = jobBefore.provider.request_id;
+const signedClient = providerClient(providerId);
+
 console.log(`Requesting start authorization for job ${job_id}...`);
 
-const authorization = await client.jobs.requestStartAuthorization(job_id, authorizationExpiry);
+const authorization = await signedClient.jobs.requestStartAuthorization(job_id, authorizationExpiry);
 
 console.log("\nStart authorization typed data:");
 console.log(JSON.stringify(authorization, null, 2));
@@ -53,7 +56,7 @@ const provider_signature = await signTypedData(
 console.log("\nProvider signature:");
 console.log(provider_signature);
 
-const started = await client.jobs.startJob(job_id, {
+const started = await signedClient.jobs.startJob(job_id, {
   provider_signature,
   ...authorizationExpiry,
 });
@@ -75,7 +78,7 @@ const finishInput: FinishJobInput = {
 console.log("\nComputed output:");
 console.log(JSON.stringify(finishInput.output, null, 2));
 
-const finished = await client.jobs.finishJob(job_id, finishInput);
+const finished = await signedClient.jobs.finishJob(job_id, finishInput);
 
 console.log("\nJob finished:");
 console.log(JSON.stringify(finished, null, 2));

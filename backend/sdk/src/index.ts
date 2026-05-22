@@ -1,6 +1,14 @@
 export { SkillHubClient } from "./client.js";
+export {
+  buildProviderRequestHeaders,
+  buildProviderRequestMessage,
+  hashProviderRequestPart,
+  isProviderAuthenticatedPath,
+} from "./provider-auth.js";
 export type {
   SkillHubClientOptions,
+  ProviderRequestAuthOptions,
+  ProviderRequestHeaders,
   HealthResponse,
   PreparedContractTransaction,
   // Providers

@@ -23,6 +23,22 @@ const app = Fastify({ logger: true });
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
 
+app.removeContentTypeParser("application/json");
+app.addContentTypeParser("application/json", { parseAs: "string" }, (req, body, done) => {
+  const rawBody = typeof body === "string" ? body : body.toString("utf8");
+  (req as typeof req & { rawBody?: string }).rawBody = rawBody;
+  if (rawBody.length === 0) {
+    done(null, undefined);
+    return;
+  }
+
+  try {
+    done(null, JSON.parse(rawBody));
+  } catch (err) {
+    done(err as Error, undefined);
+  }
+});
+
 await app.register(cors, { origin: true });
 
 await app.register(swagger, {

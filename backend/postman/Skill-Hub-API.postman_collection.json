@@ -13,7 +13,68 @@
     { "key": "outputCommitment", "value": "0x2222222222222222222222222222222222222222222222222222222222222222" },
     { "key": "signatureExpiresAt", "value": "1893456000" },
     { "key": "providerSignature", "value": "0x" },
-    { "key": "userSignature", "value": "0x" }
+    { "key": "userSignature", "value": "0x" },
+    { "key": "providerAddress", "value": "" },
+    { "key": "providerPrivateKey", "value": "" },
+    { "key": "providerRequestTimestamp", "value": "" },
+    { "key": "providerRequestNonce", "value": "" },
+    { "key": "providerRequestBodyHash", "value": "" },
+    { "key": "providerRequestQueryHash", "value": "" },
+    { "key": "providerRequestSignature", "value": "" },
+    { "key": "providerRequestMessage", "value": "" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const providerAuthRoutes = [\"/start-authorization-request\", \"/start-job\", \"/job-finish\"];",
+          "const requestUrl = pm.variables.replaceIn(pm.request.url.toString());",
+          "const pathname = requestUrl.split(\"?\")[0];",
+          "const isProviderAuthRoute = providerAuthRoutes.some((suffix) => pathname.endsWith(suffix));",
+          "",
+          "if (isProviderAuthRoute) {",
+          "  const ethersPackage = pm.require(\"npm:ethers@6.16.0\");",
+          "  const ethers = ethersPackage.ethers || ethersPackage;",
+          "  const providerId = pm.variables.get(\"providerId\");",
+          "  const privateKey = pm.variables.get(\"providerPrivateKey\");",
+          "  if (!providerId) throw new Error(\"providerId collection variable is required for provider auth headers\");",
+          "  if (!privateKey) throw new Error(\"providerPrivateKey collection variable is required to sign provider auth headers\");",
+          "",
+          "  const wallet = new ethers.Wallet(privateKey);",
+          "  const configuredAddress = pm.variables.get(\"providerAddress\");",
+          "  const providerAddress = ethers.getAddress(configuredAddress || wallet.address);",
+          "  if (providerAddress !== wallet.address) throw new Error(\"providerAddress does not match providerPrivateKey\");",
+          "",
+          "  const rawBody = pm.request.body && pm.request.body.raw ? pm.variables.replaceIn(pm.request.body.raw) : \"\";",
+          "  const rawQuery = requestUrl.includes(\"?\") ? requestUrl.slice(requestUrl.indexOf(\"?\") + 1) : \"\";",
+          "  const timestamp = Math.floor(Date.now() / 1000).toString();",
+          "  const nonce = pm.variables.replaceIn(\"{{$guid}}\");",
+          "  const bodyHash = ethers.keccak256(ethers.toUtf8Bytes(rawBody));",
+          "  const queryHash = ethers.keccak256(ethers.toUtf8Bytes(rawQuery));",
+          "  const message = [",
+          "    \"SkillHub Provider Request\",",
+          "    `providerId:${providerId}`,",
+          "    `providerAddress:${providerAddress}`,",
+          "    `timestamp:${timestamp}`,",
+          "    `nonce:${nonce}`,",
+          "    `bodyHash:${bodyHash}`,",
+          "    `queryHash:${queryHash}`",
+          "  ].join(\"\\n\");",
+          "  const signature = wallet.signingKey.sign(ethers.hashMessage(message)).serialized;",
+          "",
+          "  pm.collectionVariables.set(\"providerAddress\", providerAddress);",
+          "  pm.collectionVariables.set(\"providerRequestTimestamp\", timestamp);",
+          "  pm.collectionVariables.set(\"providerRequestNonce\", nonce);",
+          "  pm.collectionVariables.set(\"providerRequestBodyHash\", bodyHash);",
+          "  pm.collectionVariables.set(\"providerRequestQueryHash\", queryHash);",
+          "  pm.collectionVariables.set(\"providerRequestSignature\", signature);",
+          "  pm.collectionVariables.set(\"providerRequestMessage\", message);",
+          "}"
+        ]
+      }
+    }
   ],
   "item": [
     {
@@ -120,7 +181,16 @@
           "name": "Start authorization request",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Provider-Id", "value": "{{providerId}}" },
+              { "key": "X-Provider-Address", "value": "{{providerAddress}}" },
+              { "key": "X-Timestamp", "value": "{{providerRequestTimestamp}}" },
+              { "key": "X-Body-Hash", "value": "{{providerRequestBodyHash}}" },
+              { "key": "X-Signature", "value": "{{providerRequestSignature}}" },
+              { "key": "X-Nonce", "value": "{{providerRequestNonce}}" },
+              { "key": "X-Query-Hash", "value": "{{providerRequestQueryHash}}" }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"expires_at\": {{signatureExpiresAt}}\n}"
@@ -133,7 +203,16 @@
           "name": "Start job args",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Provider-Id", "value": "{{providerId}}" },
+              { "key": "X-Provider-Address", "value": "{{providerAddress}}" },
+              { "key": "X-Timestamp", "value": "{{providerRequestTimestamp}}" },
+              { "key": "X-Body-Hash", "value": "{{providerRequestBodyHash}}" },
+              { "key": "X-Signature", "value": "{{providerRequestSignature}}" },
+              { "key": "X-Nonce", "value": "{{providerRequestNonce}}" },
+              { "key": "X-Query-Hash", "value": "{{providerRequestQueryHash}}" }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"provider_signature\": \"{{providerSignature}}\",\n  \"expires_at\": {{signatureExpiresAt}}\n}"
@@ -146,7 +225,16 @@
           "name": "Job finish",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Provider-Id", "value": "{{providerId}}" },
+              { "key": "X-Provider-Address", "value": "{{providerAddress}}" },
+              { "key": "X-Timestamp", "value": "{{providerRequestTimestamp}}" },
+              { "key": "X-Body-Hash", "value": "{{providerRequestBodyHash}}" },
+              { "key": "X-Signature", "value": "{{providerRequestSignature}}" },
+              { "key": "X-Nonce", "value": "{{providerRequestNonce}}" },
+              { "key": "X-Query-Hash", "value": "{{providerRequestQueryHash}}" }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"output\": { \"result\": \"ok\", \"uri\": \"ipfs://output\" },\n  \"output_commitment\": \"{{outputCommitment}}\",\n  \"expires_in_seconds\": 3600\n}"

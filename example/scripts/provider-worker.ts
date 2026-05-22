@@ -6,14 +6,15 @@
  */
 import type { Job } from "../../backend/sdk/dist/index.js";
 import { config } from "dotenv";
-import { client, API_URL } from "../lib/sdk-client.ts";
+import { client, API_URL, providerClient } from "../lib/sdk-client.ts";
 import { env, signTypedData, type Eip712TypedData } from "../lib/transactions.ts";
 
 config({ path: new URL("../.env", import.meta.url) });
 
 const PROVIDER_REQUEST_ID = env("PROVIDER_REQUEST_ID");
+const signedClient = providerClient(PROVIDER_REQUEST_ID);
 const CHAT_URL = process.env.CHAT_URL ?? "http://127.0.0.1:3000/chat";
-const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? "10_000");
+const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? "10000");
 const AUTH_EXPIRES_IN_SECONDS = Number(process.env.AUTH_EXPIRES_IN_SECONDS ?? "300");
 
 function extractPrompt(input: unknown): string {
@@ -49,7 +50,7 @@ async function processJob(job: Job) {
   const jobId = job.request_id;
   console.log(`\n[worker] Processing job ${jobId} (on-chain job_id=${job.job_id})`);
 
-  const authorization = await client.jobs.requestStartAuthorization(jobId, {
+  const authorization = await signedClient.jobs.requestStartAuthorization(jobId, {
     expires_in_seconds: AUTH_EXPIRES_IN_SECONDS,
   });
 
@@ -58,7 +59,7 @@ async function processJob(job: Job) {
     authorization.typed_data as Eip712TypedData,
   );
 
-  const started = await client.jobs.startJob(jobId, {
+  const started = await signedClient.jobs.startJob(jobId, {
     provider_signature,
     expires_in_seconds: AUTH_EXPIRES_IN_SECONDS,
   });
@@ -69,7 +70,7 @@ async function processJob(job: Job) {
   const reply = await callAgentChat(prompt);
   console.log(`[worker] Reply (${reply.length} chars)`);
 
-  const finished = await client.jobs.finishJob(jobId, { output: reply });
+  const finished = await signedClient.jobs.finishJob(jobId, { output: reply });
   console.log(`[worker] Job finished, status should be SUBMITTED:`, finished.status);
 }
 
