@@ -15,7 +15,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "resend": "^6.12.3",
-    "skillhub-sdk": "^0.1.5",
+    "skillhub-sdk": "^0.1.6",
     "viem": "^2.50.4",
     "wagmi": "^3.6.15"
   },
