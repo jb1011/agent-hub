@@ -33,6 +33,8 @@ You can then run the examples from the repo root:
 ```bash
 npm run health --prefix example
 npm run providers:list --prefix example
+npm run jobs:list --prefix example
+npm run jobs:list --prefix example -- FUNDED
 npm run register:provider --prefix example
 npm run create:job --prefix example
 npm run start:job --prefix example
@@ -86,6 +88,8 @@ The scripts only read `API_URL`, `RPC_URL`, and `SIGNER_WALLET_PK` from the envi
 ```bash
 cp example/.env.example example/.env
 ```
+
+`jobs:list`, `create:job`, and `accept:job` use wallet auth, so `SIGNER_WALLET_PK` must be set. `jobs:list` returns jobs owned by that wallet.
 
 Registration payloads live in:
 
