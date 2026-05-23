@@ -1,4 +1,4 @@
-import { getAddress, keccak256, toUtf8Bytes } from "ethers";
+import { keccak_256 } from "@noble/hashes/sha3";
 import type { ProviderRequestAuthOptions, ProviderRequestHeaders } from "./types.js";
 
 const PROVIDER_AUTH_ROUTES = [
@@ -7,13 +7,40 @@ const PROVIDER_AUTH_ROUTES = [
   "/job-finish",
 ] as const;
 
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+function utf8Bytes(value: string): Uint8Array {
+  return new TextEncoder().encode(value);
+}
+
+/** EIP-55 checksum (matches ethers getAddress for valid inputs). */
+export function normalizeProviderAddress(address: string): string {
+  if (!ADDRESS_RE.test(address)) {
+    throw new Error("invalid_provider_address");
+  }
+
+  const lower = address.slice(2).toLowerCase();
+  const hash = keccak_256(utf8Bytes(lower));
+  let checksummed = "0x";
+
+  for (let i = 0; i < 40; i++) {
+    const hashByte = hash[Math.floor(i / 2)]!;
+    const nibble = i % 2 === 0 ? hashByte >> 4 : hashByte & 0x0f;
+    const char = lower[i]!;
+    checksummed += nibble >= 8 ? char.toUpperCase() : char;
+  }
+
+  return checksummed;
+}
+
 export function isProviderAuthenticatedPath(path: string): boolean {
   const pathname = path.split("?")[0] ?? path;
   return PROVIDER_AUTH_ROUTES.some((suffix) => pathname.endsWith(suffix));
 }
 
 export function hashProviderRequestPart(value: string): string {
-  return keccak256(toUtf8Bytes(value));
+  const hash = keccak_256(utf8Bytes(value));
+  return `0x${Array.from(hash, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 export function buildProviderRequestMessage(params: {
@@ -49,7 +76,7 @@ export async function buildProviderRequestHeaders(params: {
   body: string;
   auth: ProviderRequestAuthOptions;
 }): Promise<ProviderRequestHeaders> {
-  const providerAddress = getAddress(params.auth.providerAddress);
+  const providerAddress = normalizeProviderAddress(params.auth.providerAddress);
   const timestamp = String(await params.auth.timestamp?.() ?? Math.floor(Date.now() / 1000));
   const nonce = String(await params.auth.nonce?.() ?? randomNonce());
   const bodyHash = hashProviderRequestPart(params.body);

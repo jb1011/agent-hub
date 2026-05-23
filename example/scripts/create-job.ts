@@ -27,7 +27,6 @@ if (process.env.SIGNER_WALLET_PK?.trim()) {
     "\nSIGNER_WALLET_PK is not set, so allowance was not checked and approve was not sent.",
   );
 }
-
 await sendPreparedTransaction("createJob", transaction, {
   expectedSigner: job.user_wallet,
 });
