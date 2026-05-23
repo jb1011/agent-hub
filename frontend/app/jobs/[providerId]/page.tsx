@@ -14,7 +14,10 @@ import { arcPublicClient } from "../../lib/arc-public-client";
 import { useWalletChainId } from "../../lib/useWalletChainId";
 import { decodeCreateJobRequestId } from "../../lib/decode-create-job";
 import { formatJobOutput } from "../../lib/format-job-output";
-import { sha256Bytes32Hex } from "../../lib/sha256";
+import {
+  buildJobInputFromSchema,
+  describeJobInputField,
+} from "../../lib/build-job-input";
 import {
   buildApproveUsdcTransaction,
   fetchUsdcAllowance,
@@ -282,7 +285,7 @@ export default function CreateJobPage() {
 
     try {
       const trimmed = question.trim();
-      const inputHash = await sha256Bytes32Hex(trimmed);
+      const input = buildJobInputFromSchema(provider.input_schema, trimmed);
 
       if (!provider.registry_provider_id) {
         throw new Error("provider_registry_id_missing");
@@ -291,8 +294,7 @@ export default function CreateJobPage() {
       const jobPayload: CreateJobInput = {
         user_wallet: address,
         provider_id: provider.registry_provider_id,
-        input: { prompt: trimmed },
-        input_hash: inputHash,
+        input,
         queue_timeout_seconds: QUEUE_TIMEOUT_SECONDS,
         authorization_expires_in_seconds: AUTHORIZATION_EXPIRES_IN_SECONDS,
       };
@@ -574,9 +576,13 @@ export default function CreateJobPage() {
                   disabled={loadingProvider || isTxBusy || approveBusy}
                 />
                 <span className="text-[10px] text-black/35">
-                  Sent as <span className="font-mono">input.prompt</span>;{" "}
-                  <span className="font-mono">input_hash</span> is SHA-256 of
-                  this text (bytes32).
+                  Sent as{" "}
+                  <span className="font-mono">
+                    {describeJobInputField(provider?.input_schema)}
+                  </span>
+                  . On-chain{" "}
+                  <span className="font-mono">input_commitment</span> is derived
+                  from the JSON payload.
                 </span>
               </div>
 
