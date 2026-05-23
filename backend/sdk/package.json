@@ -27,6 +27,9 @@
     "marketplace"
   ],
   "license": "MIT",
+  "dependencies": {
+    "ethers": "^6.16.0"
+  },
   "devDependencies": {
     "typescript": "^5.8.3"
   },

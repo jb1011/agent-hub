@@ -31,10 +31,58 @@ async function skillhubFetch(path, init) {
   return data;
 }
 
+function normalizePrivateKey(privateKey) {
+  return privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
+}
+
+async function buildProviderAuthHeaders(path, body, providerId, privateKey) {
+  const { getAddress, keccak256, toUtf8Bytes, Wallet } = await import("ethers");
+  const wallet = new Wallet(normalizePrivateKey(privateKey));
+  const providerAddress = getAddress(wallet.address);
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const nonce = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const queryStart = path.indexOf("?");
+  const rawQuery = queryStart === -1 ? "" : path.slice(queryStart + 1);
+  const bodyHash = keccak256(toUtf8Bytes(body ?? ""));
+  const queryHash = keccak256(toUtf8Bytes(rawQuery));
+  const message = [
+    "SkillHub Provider Request",
+    `providerId:${providerId}`,
+    `providerAddress:${providerAddress}`,
+    `timestamp:${timestamp}`,
+    `nonce:${nonce}`,
+    `bodyHash:${bodyHash}`,
+    `queryHash:${queryHash}`,
+  ].join("\n");
+
+  return {
+    "X-Provider-Id": providerId,
+    "X-Provider-Address": providerAddress,
+    "X-Timestamp": timestamp,
+    "X-Body-Hash": bodyHash,
+    "X-Signature": await wallet.signMessage(message),
+    "X-Nonce": nonce,
+    "X-Query-Hash": queryHash,
+  };
+}
+
+async function skillhubProviderFetch(path, body, providerId) {
+  const encodedBody = JSON.stringify(body);
+  const authHeaders = await buildProviderAuthHeaders(path, encodedBody, providerId, SIGNER_WALLET_PK);
+  return skillhubFetch(path, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders,
+    },
+    body: encodedBody,
+  });
+}
+
 /** Minimal EIP-712 sign — use ethers Wallet in production (see provider-worker.ts). */
 async function signStartJob(typedData, privateKey) {
   const { Wallet } = await import("ethers");
-  const wallet = new Wallet(privateKey);
+  const wallet = new Wallet(normalizePrivateKey(privateKey));
   return wallet.signTypedData(
     typedData.domain,
     typedData.types,
@@ -47,30 +95,46 @@ async function runSkillHubJob(jobRequestId, message, runChat) {
     throw new Error("SIGNER_WALLET_PK not set — cannot start Skill Hub job");
   }
 
-  const auth = await skillhubFetch(
-    `/jobs/${encodeURIComponent(jobRequestId)}/start-authorization-request`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ expires_in_seconds: 300 }),
-    },
+  const encodedJobId = encodeURIComponent(jobRequestId);
+  const job = await skillhubFetch(`/jobs/${encodedJobId}`);
+  const providerId = job.provider?.request_id;
+  if (!providerId) {
+    throw new Error(`Skill Hub job ${jobRequestId} response missing provider.request_id`);
+  }
+  if (!job.job_id) {
+    throw new Error(`Skill Hub job ${jobRequestId} is not funded on-chain yet`);
+  }
+
+  const auth = await skillhubProviderFetch(
+    "/jobs/start-next-job-request",
+    { expires_in_seconds: 300 },
+    providerId,
   );
+  const selectedJobId = auth.start_job_args?.job_id;
+  if (!selectedJobId) {
+    throw new Error("Skill Hub start-next-job-request response missing start_job_args.job_id");
+  }
+  if (String(job.job_id) !== String(selectedJobId)) {
+    throw new Error(
+      `Skill Hub selected next job ${selectedJobId}, but chat requested ${job.job_id}`
+    );
+  }
 
   const provider_signature = await signStartJob(auth.typed_data, SIGNER_WALLET_PK);
 
-  await skillhubFetch(`/jobs/${encodeURIComponent(jobRequestId)}/start-job`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ provider_signature, expires_in_seconds: 300 }),
-  });
+  await skillhubProviderFetch(
+    `/jobs/${encodeURIComponent(selectedJobId)}/start-job`,
+    { provider_signature, expires_in_seconds: 300 },
+    providerId,
+  );
 
   const reply = await runChat(message);
 
-  await skillhubFetch(`/jobs/${encodeURIComponent(jobRequestId)}/job-finish`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ output: reply, expires_in_seconds: 3600 }),
-  });
+  await skillhubProviderFetch(
+    `/jobs/${encodeURIComponent(selectedJobId)}/job-finish`,
+    { output: reply, expires_in_seconds: 3600 },
+    providerId,
+  );
 
   return reply;
 }

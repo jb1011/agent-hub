@@ -5,6 +5,43 @@ export interface SkillHubClientOptions {
    * @default "http://localhost:3000"
    */
   baseUrl?: string;
+
+  /**
+   * Provider request signing configuration.
+   *
+   * When present, the SDK automatically adds the provider auth headers to
+   * POST /jobs/start-next-job-request, /jobs/:id/start-job and /jobs/:id/job-finish.
+   */
+  providerAuth?: ProviderRequestAuthOptions;
+
+  /**
+   * User bearer-token authentication configuration.
+   *
+   * When present, the SDK adds `Authorization: Bearer <token>` to requests.
+   */
+  userAuth?: UserAuthOptions;
+}
+
+export interface ProviderRequestAuthOptions {
+  providerId: string;
+  providerAddress: string;
+  signMessage: (message: string) => string | Promise<string>;
+  timestamp?: () => string | number | Promise<string | number>;
+  nonce?: () => string | Promise<string>;
+}
+
+export interface ProviderRequestHeaders {
+  "X-Provider-Id": string;
+  "X-Provider-Address": string;
+  "X-Timestamp": string;
+  "X-Body-Hash": string;
+  "X-Signature": string;
+  "X-Nonce": string;
+  "X-Query-Hash": string;
+}
+
+export interface UserAuthOptions {
+  accessToken: string | (() => string | Promise<string>);
 }
 
 export interface HealthResponse {

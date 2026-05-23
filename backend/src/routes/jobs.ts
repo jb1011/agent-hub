@@ -1,9 +1,9 @@
-import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { JobStatus, type Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { serializeJob, serializeEscrow } from "../lib/serialize.js";
-import { notFound, sendZodError, conflict } from "../lib/http-errors.js";
+import { notFound, sendZodError, conflict, forbidden } from "../lib/http-errors.js";
 import {
   buildJobAcceptance,
   buildStartJobAuthorization,
@@ -25,7 +25,9 @@ import {
   buildRefundAfterQueueTimeoutTransaction,
 } from "../lib/escrow-transaction.js";
 import { logProviderJobPayload } from "../lib/log-job-payload.js";
-import { uint256StringSchema } from "../lib/uint256.js";
+import { getProviderIdHeader, verifyProviderRequestHeaders } from "../lib/provider-request-auth.js";
+import { isUint256String, uint256StringSchema } from "../lib/uint256.js";
+import { requireUserAuth, type AuthenticatedUser } from "../lib/auth.js";
 
 const JOB_STATUS = [
   "CREATED", "FUNDED", "RUNNING", "SUBMITTED",
@@ -34,9 +36,6 @@ const JOB_STATUS = [
 
 const CAPACITY_JOB_STATUSES: JobStatus[] = [
   JobStatus.RUNNING,
-  JobStatus.SUBMITTED,
-  JobStatus.ACCEPTED,
-  JobStatus.DISPUTED,
 ];
 
 const REVIEW_TIMEOUT_SETTLEMENT_JOB_STATUSES: JobStatus[] = [
@@ -150,11 +149,67 @@ function secondsFromEnv(name: string, fallback: number): number {
   return value;
 }
 
+function sameWallet(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase();
+}
+
+function authenticatedUser(req: FastifyRequest, reply: FastifyReply): AuthenticatedUser | null {
+  if (!req.user) {
+    reply.status(401).send({ error: "unauthorized" });
+    return null;
+  }
+  return req.user;
+}
+
+function ensureUserOwnsJob(req: FastifyRequest, reply: FastifyReply, job: { user_wallet: string }): boolean {
+  const user = authenticatedUser(req, reply);
+  if (!user) return false;
+  if (sameWallet(job.user_wallet, user.walletAddress)) return true;
+  req.log.warn(
+    { userId: user.id, walletAddress: user.walletAddress, jobUserWallet: job.user_wallet },
+    "Authenticated user attempted to access a job owned by another wallet"
+  );
+  forbidden(reply, "job_wallet_mismatch");
+  return false;
+}
+
 async function getJobWithProvider(id: string) {
   return prisma.job.findFirst({
     where: { OR: [{ request_id: id }, { job_id: id }] },
     include: { provider: true },
   });
+}
+
+async function getNextStartableJobForProvider(providerRequestId: string) {
+  const jobs = await prisma.job.findMany({
+    where: {
+      provider_request_id: providerRequestId,
+      status: JobStatus.FUNDED,
+      job_id: { not: null },
+      input_hash: { not: null },
+      OR: [
+        { queue_deadline: null },
+        { queue_deadline: { gt: new Date() } },
+      ],
+    },
+    include: { provider: true },
+  });
+
+  return jobs.reduce<(typeof jobs)[number] | null>((next, job) => {
+    if (!job.job_id || !isUint256String(job.job_id)) return next;
+    if (!next?.job_id) return job;
+    return BigInt(job.job_id) < BigInt(next.job_id) ? job : next;
+  }, null);
+}
+
+async function providerFromAuthHeader(providerId: string) {
+  if (isBytes32(providerId)) {
+    return prisma.provider.findUnique({ where: { request_id: providerId } });
+  }
+  if (isUint256String(providerId)) {
+    return prisma.provider.findUnique({ where: { registry_provider_id: providerId } });
+  }
+  return null;
 }
 
 async function runningCapacityForProvider(providerRequestId: string) {
@@ -595,31 +650,43 @@ export function startReviewTimeoutSettlementWorker(logger: FastifyBaseLogger) {
 
 export async function jobsRoutes(app: FastifyInstance) {
   app.get("/jobs", {
+    preHandler: requireUserAuth,
     schema: {
       tags: ["Jobs"],
       summary: "List jobs with optional filters",
       querystring: listQuerySchema,
-      response: { 200: z.array(jobResponseSchema) },
+      response: {
+        200: z.array(jobResponseSchema),
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
+      },
     },
   }, async (req, reply) => {
     const query = listQuerySchema.safeParse(req.query);
     if (!query.success) return sendZodError(reply, query.error);
-    const where = query.success
-      ? {
-          ...(query.data.request_id ? { request_id: query.data.request_id } : {}),
-          ...(query.data.job_id ? { job_id: query.data.job_id } : {}),
-          ...(query.data.user_wallet ? { user_wallet: query.data.user_wallet } : {}),
-          ...(query.data.provider_request_id
-            ? { provider_request_id: query.data.provider_request_id }
-            : {}),
-          ...(query.data.status ? { status: query.data.status } : {}),
-        }
-      : {};
+    const user = authenticatedUser(req, reply);
+    if (!user) return;
+    if (query.data.user_wallet && !sameWallet(query.data.user_wallet, user.walletAddress)) {
+      return forbidden(reply, "user_wallet_mismatch");
+    }
+    const where = {
+      user_wallet: { equals: user.walletAddress, mode: "insensitive" as const },
+      ...(query.data.request_id ? { request_id: query.data.request_id } : {}),
+      ...(query.data.job_id ? { job_id: query.data.job_id } : {}),
+      ...(query.data.provider_request_id
+        ? { provider_request_id: query.data.provider_request_id }
+        : {}),
+      ...(query.data.status ? { status: query.data.status } : {}),
+    };
     const jobs = await prisma.job.findMany({
       where,
       orderBy: { created_at: "desc" },
     });
     const serialized = jobs.map(serializeJob);
+    req.log.info(
+      { userId: user.id, walletAddress: user.walletAddress, filters: query.data, count: serialized.length },
+      "Authenticated user listed jobs"
+    );
     for (const job of serialized) {
       logProviderJobPayload(req.log, "jobs_list", {
         request_id: job.request_id,
@@ -634,6 +701,7 @@ export async function jobsRoutes(app: FastifyInstance) {
   });
 
   app.get<{ Params: { id: string } }>("/jobs/:id", {
+    preHandler: requireUserAuth,
     schema: {
       tags: ["Jobs"],
       summary: "Get a job by request_id or job_id (includes escrow and provider info)",
@@ -648,6 +716,8 @@ export async function jobsRoutes(app: FastifyInstance) {
             price_usdc: z.string(),
           }),
         }),
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
       },
     },
@@ -657,6 +727,7 @@ export async function jobsRoutes(app: FastifyInstance) {
       include: { escrow: true, provider: true },
     });
     if (!job) return notFound(reply);
+    if (ensureUserOwnsJob(req, reply, job) !== true) return;
     const body = {
       ...serializeJob(job),
       escrow: job.escrow ? serializeEscrow(job.escrow) : null,
@@ -674,11 +745,12 @@ export async function jobsRoutes(app: FastifyInstance) {
       provider_request_id: body.provider_request_id,
       input: body.input,
       input_hash: body.input_hash,
-    });
+    }, { user_id: req.user?.id, wallet_address: req.user?.walletAddress });
     return reply.send(body);
   });
 
   app.post("/jobs", {
+    preHandler: requireUserAuth,
     schema: {
       tags: ["Jobs"],
       summary: "Create a job and generate on-chain creation arguments",
@@ -686,6 +758,8 @@ export async function jobsRoutes(app: FastifyInstance) {
       response: {
         201: preparedTransactionResponseSchema,
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
         500: z.object({ error: z.string() }),
@@ -694,6 +768,11 @@ export async function jobsRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
+    const user = authenticatedUser(req, reply);
+    if (!user) return;
+    if (!sameWallet(parsed.data.user_wallet, user.walletAddress)) {
+      return forbidden(reply, "user_wallet_mismatch");
+    }
     const provider = await prisma.provider.findUnique({
       where: { registry_provider_id: parsed.data.provider_id },
     });
@@ -711,7 +790,7 @@ export async function jobsRoutes(app: FastifyInstance) {
 
     try {
       const authorization = await signCreateJobAuthorization({
-        userWallet: parsed.data.user_wallet,
+        userWallet: user.walletAddress,
         providerId: provider.registry_provider_id,
         priceUsdc: provider.price_usdc.toString(),
         workTimeoutSeconds: provider.timeout_seconds,
@@ -740,6 +819,16 @@ export async function jobsRoutes(app: FastifyInstance) {
         },
       });
 
+      req.log.info(
+        {
+          userId: user.id,
+          walletAddress: user.walletAddress,
+          requestId: authorization.request_id,
+          providerRequestId: provider.request_id,
+        },
+        "Authenticated user created job"
+      );
+
       return reply.status(201).send(buildCreateJobTransaction({
         providerId: authorization.provider_id,
         requestId: authorization.request_id,
@@ -757,11 +846,10 @@ export async function jobsRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post<{ Params: { id: string } }>("/jobs/:id/start-authorization-request", {
+  app.post("/jobs/start-next-job-request", {
     schema: {
       tags: ["Jobs"],
-      summary: "Build the EIP-712 payload the provider signs before startJob",
-      params: idParamsSchema,
+      summary: "Build the EIP-712 payload the provider signs before starting its next job",
       body: authExpirySchema,
       response: {
         200: z.object({
@@ -772,6 +860,8 @@ export async function jobsRoutes(app: FastifyInstance) {
           }),
         }),
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
         500: z.object({ error: z.string() }),
@@ -780,9 +870,20 @@ export async function jobsRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const parsed = authExpirySchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
-    const job = await getJobWithProvider(req.params.id);
+    const providerId = getProviderIdHeader(req);
+    if (!providerId) {
+      return reply.status(401).send({ error: "missing_header_x-provider-id" });
+    }
+    if (!isBytes32(providerId) && !isUint256String(providerId)) {
+      return reply.status(400).send({ error: "provider_id_invalid" });
+    }
+    const provider = await providerFromAuthHeader(providerId);
+    if (!provider) return notFound(reply, "provider_not_found");
+    const auth = verifyProviderRequestHeaders(req, reply, provider);
+    if (!auth.ok) return auth.reply;
+    const job = await getNextStartableJobForProvider(provider.request_id);
+    if (!job) return notFound(reply, "next_job_not_found");
     const notStartable = await ensureStartable(job);
-    if (notStartable === "job_not_found") return notFound(reply);
     if (notStartable) return conflict(reply, notStartable);
 
     try {
@@ -814,6 +915,8 @@ export async function jobsRoutes(app: FastifyInstance) {
           gas_used: z.string().nullable(),
         }),
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
         500: z.object({ error: z.string() }),
@@ -823,8 +926,10 @@ export async function jobsRoutes(app: FastifyInstance) {
     const parsed = providerSignatureSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const job = await getJobWithProvider(req.params.id);
+    if (!job) return notFound(reply);
+    const auth = verifyProviderRequestHeaders(req, reply, job.provider);
+    if (!auth.ok) return auth.reply;
     const notStartable = await ensureStartable(job);
-    if (notStartable === "job_not_found") return notFound(reply);
     if (notStartable) return conflict(reply, notStartable);
 
     try {
@@ -905,6 +1010,8 @@ export async function jobsRoutes(app: FastifyInstance) {
           }),
         }),
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
         500: z.object({ error: z.string() }),
@@ -915,6 +1022,8 @@ export async function jobsRoutes(app: FastifyInstance) {
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const job = await getJobWithProvider(req.params.id);
     if (!job) return notFound(reply);
+    const auth = verifyProviderRequestHeaders(req, reply, job.provider);
+    if (!auth.ok) return auth.reply;
     if (job.status !== JobStatus.RUNNING) {
       return conflict(reply, `job_not_running_status_${job.status}`);
     }
@@ -982,6 +1091,7 @@ export async function jobsRoutes(app: FastifyInstance) {
   });
 
   app.post<{ Params: { id: string } }>("/jobs/:id/acceptance-request", {
+    preHandler: requireUserAuth,
     schema: {
       tags: ["Jobs"],
       summary: "Build the EIP-712 payload the user signs to accept output",
@@ -997,6 +1107,8 @@ export async function jobsRoutes(app: FastifyInstance) {
           }),
         }),
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
         500: z.object({ error: z.string() }),
@@ -1007,6 +1119,7 @@ export async function jobsRoutes(app: FastifyInstance) {
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const job = await getJobWithProvider(req.params.id);
     if (!job) return notFound(reply);
+    if (ensureUserOwnsJob(req, reply, job) !== true) return;
     if (!isStatus(job.status, [JobStatus.RUNNING, JobStatus.SUBMITTED, JobStatus.ACCEPTED])) {
       return conflict(reply, `job_not_acceptance_ready_status_${job.status}`);
     }
@@ -1035,6 +1148,7 @@ export async function jobsRoutes(app: FastifyInstance) {
   });
 
   app.post<{ Params: { id: string } }>("/jobs/:id/acceptance", {
+    preHandler: requireUserAuth,
     schema: {
       tags: ["Jobs"],
       summary: "Accept a submitted job and relay settleWithUserSignature",
@@ -1057,6 +1171,8 @@ export async function jobsRoutes(app: FastifyInstance) {
           protocol_fee: z.string().nullable(),
         }),
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
         500: z.object({ error: z.string() }),
@@ -1068,6 +1184,7 @@ export async function jobsRoutes(app: FastifyInstance) {
 
     const job = await getJobWithProvider(req.params.id);
     if (!job) return notFound(reply);
+    if (ensureUserOwnsJob(req, reply, job) !== true) return;
     if (!isStatus(job.status, [JobStatus.SUBMITTED, JobStatus.ACCEPTED])) {
       return conflict(reply, `job_not_submitted_status_${job.status}`);
     }
@@ -1136,12 +1253,15 @@ export async function jobsRoutes(app: FastifyInstance) {
   });
 
   app.post<{ Params: { id: string } }>("/jobs/:id/refund-after-queue-timeout", {
+    preHandler: requireUserAuth,
     schema: {
       tags: ["Jobs"],
       summary: "Return refundAfterQueueTimeout transaction after queue deadline",
       params: idParamsSchema,
       response: {
         200: preparedTransactionResponseSchema,
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
       },
@@ -1149,6 +1269,7 @@ export async function jobsRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const job = await getJobWithProvider(req.params.id);
     if (!job) return notFound(reply);
+    if (ensureUserOwnsJob(req, reply, job) !== true) return;
     if (!job.job_id) return conflict(reply, "job_not_funded_onchain");
     if (job.status !== JobStatus.FUNDED) return conflict(reply, `job_not_queued_status_${job.status}`);
     if (!job.queue_deadline) return conflict(reply, "queue_deadline_missing");
@@ -1162,12 +1283,15 @@ export async function jobsRoutes(app: FastifyInstance) {
   });
 
   app.post<{ Params: { id: string } }>("/jobs/:id/refund-after-final-timeout", {
+    preHandler: requireUserAuth,
     schema: {
       tags: ["Jobs"],
       summary: "Return refundAfterFinalTimeout transaction after final refund deadline",
       params: idParamsSchema,
       response: {
         200: preparedTransactionResponseSchema,
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
         409: z.object({ error: z.string() }),
       },
@@ -1175,6 +1299,7 @@ export async function jobsRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const job = await getJobWithProvider(req.params.id);
     if (!job) return notFound(reply);
+    if (ensureUserOwnsJob(req, reply, job) !== true) return;
     if (!job.job_id) return conflict(reply, "job_not_funded_onchain");
     if (!isStatus(job.status, [JobStatus.RUNNING, JobStatus.SUBMITTED, JobStatus.ACCEPTED, JobStatus.FAILED])) {
       return conflict(reply, `job_not_running_status_${job.status}`);

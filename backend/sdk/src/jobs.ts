@@ -60,20 +60,33 @@ export class JobsResource {
   }
 
   /**
-   * Build the EIP-712 payload the provider signs before startJob.
-   * POST /jobs/:id/start-authorization-request
+   * Build the EIP-712 payload the provider signs before starting its next job.
+   * POST /jobs/start-next-job-request
    */
-  requestStartAuthorization(
-    id: string,
-    input: AuthorizationExpiryInput = {}
-  ): Promise<StartAuthorizationRequestResult> {
+  requestStartNextJob(input: AuthorizationExpiryInput = {}): Promise<StartAuthorizationRequestResult> {
     return this.request<StartAuthorizationRequestResult>(
-      this.path(id, "/start-authorization-request"),
+      "/jobs/start-next-job-request",
       {
         method: "POST",
         body: JSON.stringify(input),
       }
     );
+  }
+
+  /**
+   * @deprecated Use requestStartNextJob(input). The API now derives the provider
+   * from signed request headers and selects the next provider job server-side.
+   */
+  requestStartAuthorization(input?: AuthorizationExpiryInput): Promise<StartAuthorizationRequestResult>;
+  requestStartAuthorization(
+    id: string,
+    input?: AuthorizationExpiryInput
+  ): Promise<StartAuthorizationRequestResult>;
+  requestStartAuthorization(
+    idOrInput: string | AuthorizationExpiryInput = {},
+    input: AuthorizationExpiryInput = {}
+  ): Promise<StartAuthorizationRequestResult> {
+    return this.requestStartNextJob(typeof idOrInput === "string" ? input : idOrInput);
   }
 
   /**

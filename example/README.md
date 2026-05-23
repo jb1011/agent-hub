@@ -26,6 +26,8 @@ To automatically link `registry_provider_id` after `registerProvider`, start the
 
 If you want the example to sign and send transactions, also set `RPC_URL` and `SIGNER_WALLET_PK` in `example/.env`. The key must match the signer expected by the transaction: `owner_wallet` for register provider, `user_wallet` for create job / accept job, `signer_wallet` for start job.
 
+Provider job calls now use the SDK `providerAuth` option. `start:job`, `worker`, and `agent-skillhub-chat-handler.js` sign the provider request headers with `SIGNER_WALLET_PK`, so that key must match the registered provider `signer_wallet` before calling `start-next-job-request`, `start-job`, or `job-finish`.
+
 You can then run the examples from the repo root:
 
 ```bash
@@ -52,23 +54,23 @@ When a user submits a job on the Skill Hub UI, the frontend calls your registere
 }
 ```
 
-Wire `example/agent-skillhub-chat-handler.js` into `agent-poet` `/chat` so that when `job_request_id` is present you run start-job → your LLM → job-finish (env: `SKILLHUB_API_URL`, `SIGNER_WALLET_PK`). No `PROVIDER_REQUEST_ID` polling needed.
+Wire `example/agent-skillhub-chat-handler.js` into `agent-poet` `/chat` so that when `job_request_id` is present you run start-job → your LLM → job-finish (env: `SKILLHUB_API_URL`, `SIGNER_WALLET_PK`). No poll worker needed.
 
 ### Optional: poll worker
 
-If you cannot change `/chat`, run `provider-worker.ts` beside `agent-poete`:
+If you cannot change `/chat`, run `provider-worker.ts` beside `agent-poete` (uses `config/start-job.json` for `provider_id` and `expires_in_seconds`):
 
-1. Poll `GET /jobs?status=FUNDED&provider_request_id=<bytes32>`
-2. `start-job` (sign with `SIGNER_WALLET_PK` = provider `signer_wallet`)
+1. `POST /jobs/start-next-job-request` with signed provider auth headers
+2. `start-job` for the returned `start_job_args.job_id` (sign with `SIGNER_WALLET_PK` = provider `signer_wallet`)
 3. `POST` `CHAT_URL` with `{"message":"<job.input.prompt>"}`
-4. `job-finish` with `output` matching your provider `output_schema` (plain string if schema `type: "string"`)
+4. `job-finish` for the same `job_id` with signed provider auth headers and `output` matching your provider `output_schema` (plain string if schema `type: "string"`)
 
 ```bash
 cp example/.env.example example/.env
 # API_URL=http://159.223.137.183:3000
-# PROVIDER_REQUEST_ID=0x37d4...   (from /jobs/0x37d4... page URL)
-# SIGNER_WALLET_PK=...
+# SIGNER_WALLET_PK=...        (provider signer_wallet, used for EIP-712 and providerAuth headers)
 # CHAT_URL=http://127.0.0.1:3000/chat
+# Set provider_id in example/config/start-job.json (API request_id from POST /providers)
 
 npm run build --prefix backend/sdk
 npm run worker:once --prefix example
@@ -165,12 +167,25 @@ Otherwise, it only prints the prepared transaction (remember to approve the paym
 
 ## Start a job
 
-`scripts/start-job.ts` reads `example/config/start-job.json`, then calls:
+`scripts/start-job.ts` reads `example/config/start-job.json`. The recommended config is provider-scoped:
+
+```json
+{
+  "provider_id": "0xYOUR_PROVIDER_API_REQUEST_ID",
+  "expires_in_seconds": 900
+}
+```
+
+It then asks the backend for the provider's next startable job:
 
 ```ts
-const authorization = await client.jobs.requestStartAuthorization(job_id, {
+const signedClient = providerClient(provider_id);
+
+const authorization = await signedClient.jobs.requestStartNextJob({
   expires_in_seconds,
 });
+
+const job_id = authorization.start_job_args.job_id;
 
 const provider_signature = await signer.signTypedData(
   authorization.typed_data.domain,
@@ -178,17 +193,19 @@ const provider_signature = await signer.signTypedData(
   authorization.typed_data.value
 );
 
-const started = await client.jobs.startJob(job_id, {
+const started = await signedClient.jobs.startJob(job_id, {
   provider_signature,
   expires_in_seconds,
 });
 
 const output = { text: `1 + 1 = ${1 + 1}` };
 
-const finished = await client.jobs.finishJob(job_id, {
+const finished = await signedClient.jobs.finishJob(job_id, {
   output,
 });
 ```
+
+In the script, these provider SDK calls are made with `providerClient(provider_id)`, which enables SDK `providerAuth` and automatically sends `X-Provider-Id`, `X-Provider-Address`, `X-Timestamp`, `X-Body-Hash`, `X-Signature`, `X-Nonce`, and `X-Query-Hash`.
 
 The `startJob` call returns `input` with relayed transaction metadata (`transaction_hash`, `relayer_address`, `block_number`, `gas_used`). The script then runs a trivial compute (`1 + 1`) and calls `job-finish` with `output`. `SIGNER_WALLET_PK` must match the `signer_wallet` registered for the provider.
 

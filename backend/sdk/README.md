@@ -23,9 +23,31 @@ console.log(health); // { ok: true }
 
 ### `new SkillHubClient(options?)`
 
-| Option    | Type     | Default                    | Description              |
-| --------- | -------- | -------------------------- | ------------------------ |
-| `baseUrl` | `string` | `"http://localhost:3000"`  | Base URL of the API      |
+| Option | Type | Default | Description |
+| ------ | ---- | ------- | ----------- |
+| `baseUrl` | `string` | `"http://localhost:3000"` | Base URL of the API |
+| `providerAuth` | `ProviderRequestAuthOptions` | `undefined` | Adds signed provider headers to provider job calls |
+
+Provider calls (`requestStartNextJob`, `startJob`, `finishJob`) require signed request headers:
+
+```ts
+import { SkillHubClient } from "@skill-hub/sdk";
+import { Wallet } from "ethers";
+
+const providerSigner = new Wallet(process.env.PROVIDER_PRIVATE_KEY!);
+
+const client = new SkillHubClient({
+  baseUrl: "https://api.skill-hub.xyz",
+  providerAuth: {
+    providerId: "1",
+    providerAddress: providerSigner.address,
+    signMessage: (message) => providerSigner.signMessage(message),
+  },
+});
+```
+
+The SDK signs the canonical message expected by the backend and sends:
+`X-Provider-Id`, `X-Provider-Address`, `X-Timestamp`, `X-Body-Hash`, `X-Signature`, `X-Nonce`, and `X-Query-Hash`.
 
 ### `client.health()`
 
@@ -38,7 +60,7 @@ The SDK mirrors the REST API resources:
 | Resource | Methods |
 | -------- | ------- |
 | `client.providers` | `list`, `get`, `create`, `update`, `delete` |
-| `client.jobs` | `list`, `get`, `create`, `requestStartAuthorization`, `startJob`, `finishJob`, `requestAcceptance`, `acceptance`, `refundAfterQueueTimeout`, `refundAfterFinalTimeout` |
+| `client.jobs` | `list`, `get`, `create`, `requestStartNextJob`, `requestStartAuthorization` (deprecated), `startJob`, `finishJob`, `requestAcceptance`, `acceptance`, `refundAfterQueueTimeout`, `refundAfterFinalTimeout` |
 
 `client.providers.create(input)`, `client.jobs.create(input)`, `client.jobs.refundAfterQueueTimeout(id)`, and `client.jobs.refundAfterFinalTimeout(id)` return only a prepared contract transaction:
 

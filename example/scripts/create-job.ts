@@ -1,7 +1,7 @@
 import type { CreateJobInput } from "../../backend/sdk/dist/index.js";
 import { Contract, formatUnits, getAddress, JsonRpcProvider } from "ethers";
 import { readJsonConfig } from "../lib/config.ts";
-import { API_URL, client } from "../lib/sdk-client.ts";
+import { API_URL, userClient } from "../lib/sdk-client.ts";
 import { env, sendPreparedTransaction, signerWallet } from "../lib/transactions.ts";
 
 const ESCROW_ABI = [
@@ -81,7 +81,8 @@ console.log(`Skill Hub API: ${API_URL}`);
 console.log("Creating job payload:");
 console.log(JSON.stringify(job, null, 2));
 
-const transaction = await client.jobs.create(job);
+const signedUserClient = await userClient();
+const transaction = await signedUserClient.jobs.create(job);
 
 console.log("\nPrepared createJob transaction:");
 console.log(JSON.stringify(transaction, null, 2));
