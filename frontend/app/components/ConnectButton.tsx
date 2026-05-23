@@ -12,7 +12,12 @@ function shortenAddress(addr: string) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
-export function ConnectButton() {
+type ConnectButtonProps = {
+  /** When false, only connect/disconnect — no Skill Hub SIWE sign-in (e.g. register provider). */
+  signInRequired?: boolean;
+};
+
+export function ConnectButton({ signInRequired = true }: ConnectButtonProps) {
   const { address, isConnected } = useAccount();
   const { connectors, connect, isPending, error: connectError } = useConnect();
   const { disconnect } = useDisconnect();
@@ -44,7 +49,7 @@ export function ConnectButton() {
   }
 
   async function handleDisconnect() {
-    if (isAuthenticated) {
+    if (signInRequired && isAuthenticated) {
       await signOut();
     }
     disconnect();
@@ -117,34 +122,35 @@ export function ConnectButton() {
           </button>
         )}
 
-        {isAuthenticated ? (
-          <span
-            className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-1"
-            style={{ background: "#E85A00", color: "#fff" }}
-          >
-            <ShieldCheck size={10} />
-            Signed In
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={() => void handleSignIn()}
-            disabled={isSigningIn}
-            className="btn-cyber disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {isSigningIn ? (
-              <>
-                <Loader2 size={13} className="animate-spin" />
-                Signing In…
-              </>
-            ) : (
-              <>
-                <ShieldCheck size={13} />
-                Sign In
-              </>
-            )}
-          </button>
-        )}
+        {signInRequired &&
+          (isAuthenticated ? (
+            <span
+              className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-1"
+              style={{ background: "#E85A00", color: "#fff" }}
+            >
+              <ShieldCheck size={10} />
+              Signed In
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void handleSignIn()}
+              disabled={isSigningIn}
+              className="btn-cyber disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {isSigningIn ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" />
+                  Signing In…
+                </>
+              ) : (
+                <>
+                  <ShieldCheck size={13} />
+                  Sign In
+                </>
+              )}
+            </button>
+          ))}
 
         <button
           type="button"
@@ -160,12 +166,12 @@ export function ConnectButton() {
           {switchError}
         </span>
       )}
-      {authError && (
+      {signInRequired && authError && (
         <span className="text-[11px] text-red-600 font-medium break-words">
           {authError}
         </span>
       )}
-      {isConnected && !isAuthenticated && !isSigningIn && (
+      {signInRequired && isConnected && !isAuthenticated && !isSigningIn && (
         <span className="text-[10px] text-black/45 uppercase tracking-widest">
           Sign in with your wallet to create and view jobs.
         </span>

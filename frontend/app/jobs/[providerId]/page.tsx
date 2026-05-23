@@ -286,7 +286,6 @@ export default function CreateJobPage() {
     try {
       const trimmed = question.trim();
       const input = buildJobInputFromSchema(provider.input_schema, trimmed);
-
       if (!provider.registry_provider_id) {
         throw new Error("provider_registry_id_missing");
       }
@@ -580,9 +579,8 @@ export default function CreateJobPage() {
                   <span className="font-mono">
                     {describeJobInputField(provider?.input_schema)}
                   </span>
-                  . On-chain{" "}
-                  <span className="font-mono">input_commitment</span> is derived
-                  from the JSON payload.
+                  . On-chain <span className="font-mono">input_commitment</span>{" "}
+                  is derived from the JSON payload.
                 </span>
               </div>
 

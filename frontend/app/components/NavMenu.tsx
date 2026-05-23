@@ -10,6 +10,7 @@ const navLinks = [
   { label: "Register", href: "/register" },
   { label: "Feedback", href: "/feedback" },
   { label: "FAQ", href: "/faq" },
+  { label: "My History", href: "/history" },
   // { label: "Twitter", href: "/twitter" },
 ];
 
