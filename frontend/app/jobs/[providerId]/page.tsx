@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Zap, ExternalLink, Loader2 } from "lucide-react";
-import { useAccount, useSendTransaction } from "wagmi";
+import { useAccount, useSendTransaction, useSignTypedData } from "wagmi";
 import { arcTestnet } from "viem/chains";
 import type { CreateJobInput, JobWithDetails } from "skillhub-sdk";
 import NavMenu from "../../components/NavMenu";
@@ -14,12 +14,20 @@ import { arcPublicClient } from "../../lib/arc-public-client";
 import { useWalletChainId } from "../../lib/useWalletChainId";
 import { decodeCreateJobRequestId } from "../../lib/decode-create-job";
 import { formatJobOutput } from "../../lib/format-job-output";
-import { sha256Bytes32Hex } from "../../lib/sha256";
+import {
+  buildJobInputFromSchema,
+  describeJobInputField,
+} from "../../lib/build-job-input";
 import {
   buildApproveUsdcTransaction,
   fetchUsdcAllowance,
 } from "../../lib/escrow-payment";
 import { apiKeys, fetchProvider } from "../../lib/api";
+import {
+  ACCEPTANCE_EXPIRES_IN_SECONDS,
+  buildAcceptanceInput,
+  parseAcceptanceTypedData,
+} from "../../lib/accept-job";
 import { useAuth } from "../../providers/AuthProvider";
 
 const GRID = "rgba(0,0,0,0.12)";
@@ -36,7 +44,9 @@ type Phase =
   | "confirming"
   | "waiting_funded"
   | "waiting_output"
-  | "done"
+  | "review"
+  | "accepting"
+  | "settled"
   | "error";
 
 const inputClass =
@@ -67,6 +77,15 @@ function formatSubmitError(err: unknown): string {
   }
   if ((err as { code?: number })?.code === 4001) {
     return "You rejected the MetaMask prompt.";
+  }
+  if (raw.includes("job_not_acceptance_ready")) {
+    return "This job is not ready to accept yet. Wait for the provider to submit output.";
+  }
+  if (raw.includes("job_not_submitted")) {
+    return "Output is not submitted yet. Wait for the provider to finish the job.";
+  }
+  if (raw.includes("acceptance_typed_data_invalid")) {
+    return "Could not parse acceptance signature request from the API.";
   }
   return raw;
 }
@@ -138,12 +157,14 @@ export default function CreateJobPage() {
   const walletChainId = useWalletChainId();
   const onArc = walletChainId === arcTestnet.id;
   const { sendTransactionAsync } = useSendTransaction();
+  const { signTypedDataAsync } = useSignTypedData();
 
   const [question, setQuestion] = useState("");
   const [phase, setPhase] = useState<Phase>("form");
   const [approveBusy, setApproveBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [settleTxHash, setSettleTxHash] = useState<string | null>(null);
   const [approveTxHash, setApproveTxHash] = useState<string | null>(null);
   const [jobRequestId, setJobRequestId] = useState<string | null>(null);
 
@@ -182,6 +203,7 @@ export default function CreateJobPage() {
   const isTxBusy =
     phase === "switching" || phase === "signing" || phase === "confirming";
   const isPolling = phase === "waiting_funded" || phase === "waiting_output";
+  const isAccepting = phase === "accepting";
 
   const canApprove =
     isConnected &&
@@ -204,7 +226,9 @@ export default function CreateJobPage() {
     !approveBusy &&
     !isTxBusy &&
     !isPolling &&
-    phase !== "done" &&
+    !isAccepting &&
+    phase !== "review" &&
+    phase !== "settled" &&
     !loadingProvider &&
     !providerError &&
     !!provider?.registry_provider_id;
@@ -246,11 +270,17 @@ export default function CreateJobPage() {
     }
   }
 
+  const needsJobPolling =
+    phase === "waiting_funded" ||
+    phase === "waiting_output" ||
+    phase === "review" ||
+    phase === "accepting";
+
   const { data: job } = useQuery({
     queryKey: ["jobs", jobRequestId],
     queryFn: () => skillHub.jobs.get(jobRequestId!),
-    enabled: !!jobRequestId && isPolling,
-    refetchInterval: 2500,
+    enabled: !!jobRequestId && (needsJobPolling || phase === "settled"),
+    refetchInterval: needsJobPolling ? 2500 : false,
   });
 
   useEffect(() => {
@@ -268,9 +298,71 @@ export default function CreateJobPage() {
     }
 
     if (phase === "waiting_output" && job.output != null) {
-      setPhase("done");
+      setPhase(job.status === "SETTLED" ? "settled" : "review");
     }
   }, [job, phase, isPolling]);
+
+  async function handleAcceptOutput() {
+    if (!job || !jobRequestId || !isAuthenticated) return;
+
+    const jobId = job.job_id ?? jobRequestId;
+    setErrorMsg("");
+    setSettleTxHash(null);
+    setPhase("accepting");
+
+    try {
+      await ensureArcTestnet();
+
+      const outputCommitment = {
+        output: job.output ?? undefined,
+        expires_in_seconds: ACCEPTANCE_EXPIRES_IN_SECONDS,
+      };
+
+      const acceptanceRequest = await skillHub.jobs.requestAcceptance(
+        jobId,
+        outputCommitment,
+      );
+      const typedData = parseAcceptanceTypedData(acceptanceRequest.typed_data);
+
+      const userSignature = await signTypedDataAsync({
+        domain: typedData.domain,
+        types: typedData.types,
+        primaryType: typedData.primaryType,
+        message: typedData.value,
+      });
+
+      const accepted = await skillHub.jobs.acceptance(
+        jobId,
+        buildAcceptanceInput(
+          outputCommitment,
+          acceptanceRequest,
+          userSignature,
+        ),
+      );
+
+      setSettleTxHash(accepted.transaction_hash);
+      setPhase("settled");
+      await queryClient.invalidateQueries({ queryKey: ["jobs", jobRequestId] });
+    } catch (err) {
+      setErrorMsg(formatSubmitError(err));
+      setPhase("review");
+    }
+  }
+
+  function resetForAnotherQuestion() {
+    setQuestion("");
+    setPhase("form");
+    setJobRequestId(null);
+    setTxHash(null);
+    setSettleTxHash(null);
+    setApproveTxHash(null);
+    setErrorMsg("");
+    if (address) {
+      void queryClient.invalidateQueries({
+        queryKey: ["usdc-allowance", address],
+      });
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -282,8 +374,7 @@ export default function CreateJobPage() {
 
     try {
       const trimmed = question.trim();
-      const inputHash = await sha256Bytes32Hex(trimmed);
-
+      const input = buildJobInputFromSchema(provider.input_schema, trimmed);
       if (!provider.registry_provider_id) {
         throw new Error("provider_registry_id_missing");
       }
@@ -291,8 +382,7 @@ export default function CreateJobPage() {
       const jobPayload: CreateJobInput = {
         user_wallet: address,
         provider_id: provider.registry_provider_id,
-        input: { prompt: trimmed },
-        input_hash: inputHash,
+        input,
         queue_timeout_seconds: QUEUE_TIMEOUT_SECONDS,
         authorization_expires_in_seconds: AUTHORIZATION_EXPIRES_IN_SECONDS,
       };
@@ -446,19 +536,27 @@ export default function CreateJobPage() {
             </a>
             <p className="text-[10px] text-black/30 uppercase tracking-widest leading-relaxed">
               Step 1: connect wallet and sign in. Step 2: approve USDC. Step 3:
-              create job and wait for the agent.
+              create job. Step 4: review output and accept to settle payment.
             </p>
           </div>
         </div>
 
         <div className="flex-1 px-6 md:px-10 py-12 md:py-16">
-          {phase === "done" && job ? (
+          {phase === "accepting" ? (
+            <LoadingPanel
+              title="Accepting Output"
+              detail="Requesting acceptance payload, signing JobAcceptance in MetaMask, and relaying settlement on Arc Testnet…"
+              job={job}
+            />
+          ) : (phase === "review" || phase === "settled") && job ? (
             <div className="flex flex-col items-start gap-6 max-w-2xl">
               <div
                 className="w-12 h-12 flex items-center justify-center text-white text-xl"
-                style={{ background: "#E85A00" }}
+                style={{
+                  background: phase === "settled" ? "#0c0c0c" : "#E85A00",
+                }}
               >
-                ✓
+                {phase === "settled" ? "✓" : "!"}
               </div>
               <h2
                 className="uppercase"
@@ -469,8 +567,21 @@ export default function CreateJobPage() {
                   color: "#0c0c0c",
                 }}
               >
-                Response Ready
+                {phase === "settled" ? "Job Settled" : "Response Ready"}
               </h2>
+              {phase === "review" && (
+                <p className="text-sm text-black/60 leading-relaxed max-w-lg">
+                  Review the agent&apos;s output below. Accept to sign{" "}
+                  <span className="font-mono">JobAcceptance</span> and release
+                  USDC to the provider.
+                </p>
+              )}
+              {phase === "settled" && (
+                <p className="text-sm text-black/60 leading-relaxed max-w-lg">
+                  Payment settled on-chain. USDC has been released to the
+                  provider.
+                </p>
+              )}
               <div
                 className="w-full p-5 text-sm leading-relaxed text-black/80 whitespace-pre-wrap"
                 style={{
@@ -483,38 +594,79 @@ export default function CreateJobPage() {
               <div className="text-[10px] uppercase tracking-widest text-black/35 space-y-1 font-mono">
                 {job.job_id && <div>job_id: {job.job_id}</div>}
                 <div className="break-all">request_id: {job.request_id}</div>
-                <div>status: {job.status}</div>
+                <div>
+                  status: {phase === "settled" ? "SETTLED" : job.status}
+                </div>
               </div>
               {txHash && (
-                <a
-                  href={`https://testnet.arcscan.app/tx/${txHash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-mono text-[#E85A00] hover:underline flex items-center gap-1 break-all"
-                >
-                  {txHash}
-                  <ExternalLink size={12} />
-                </a>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] uppercase tracking-widest text-black/35">
+                    Create job tx
+                  </span>
+                  <a
+                    href={`https://testnet.arcscan.app/tx/${txHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-mono text-[#E85A00] hover:underline flex items-center gap-1 break-all"
+                  >
+                    {txHash}
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
               )}
-              <button
-                type="button"
-                className="btn-cyber"
-                onClick={() => {
-                  setQuestion("");
-                  setPhase("form");
-                  setJobRequestId(null);
-                  setTxHash(null);
-                  setApproveTxHash(null);
-                  setErrorMsg("");
-                  if (address) {
-                    void queryClient.invalidateQueries({
-                      queryKey: ["usdc-allowance", address],
-                    });
-                  }
-                }}
-              >
-                Ask Another Question <ArrowRight size={13} />
-              </button>
+              {settleTxHash && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] uppercase tracking-widest text-black/35">
+                    Settlement tx
+                  </span>
+                  <a
+                    href={`https://testnet.arcscan.app/tx/${settleTxHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-mono text-[#E85A00] hover:underline flex items-center gap-1 break-all"
+                  >
+                    {settleTxHash}
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
+              )}
+              {phase === "review" && errorMsg && (
+                <div
+                  className="p-3 text-xs text-red-700 break-words w-full"
+                  style={{
+                    border: "1px solid rgba(220, 38, 38, 0.3)",
+                    background: "rgba(220, 38, 38, 0.05)",
+                  }}
+                >
+                  {errorMsg}
+                </div>
+              )}
+              <div className="flex items-center gap-4 flex-wrap">
+                {phase === "review" && (
+                  <button
+                    type="button"
+                    className="btn-cyber disabled:opacity-40 disabled:cursor-not-allowed"
+                    disabled={!isAuthenticated}
+                    onClick={() => void handleAcceptOutput()}
+                  >
+                    Accept Output <ArrowRight size={13} />
+                  </button>
+                )}
+                {phase === "settled" && (
+                  <button
+                    type="button"
+                    className="btn-cyber"
+                    onClick={resetForAnotherQuestion}
+                  >
+                    Ask Another Question <ArrowRight size={13} />
+                  </button>
+                )}
+              </div>
+              {phase === "review" && !isAuthenticated && (
+                <p className="text-[11px] text-black/40">
+                  Sign in with your wallet to accept the output.
+                </p>
+              )}
             </div>
           ) : isPolling ? (
             <LoadingPanel
@@ -574,9 +726,12 @@ export default function CreateJobPage() {
                   disabled={loadingProvider || isTxBusy || approveBusy}
                 />
                 <span className="text-[10px] text-black/35">
-                  Sent as <span className="font-mono">input.prompt</span>;{" "}
-                  <span className="font-mono">input_hash</span> is SHA-256 of
-                  this text (bytes32).
+                  Sent as{" "}
+                  <span className="font-mono">
+                    {describeJobInputField(provider?.input_schema)}
+                  </span>
+                  . On-chain <span className="font-mono">input_commitment</span>{" "}
+                  is derived from the JSON payload.
                 </span>
               </div>
 

@@ -45,3 +45,14 @@ export function formatJobOutput(output: unknown): string {
   if (text !== null) return text;
   return JSON.stringify(output, null, 2);
 }
+
+/** Same rendering rules as output — used for job input in history, etc. */
+export function formatJobInput(input: unknown): string {
+  return formatJobOutput(input);
+}
+
+export function formatJobPayload(value: unknown, empty = "—"): string {
+  if (value == null) return empty;
+  const formatted = formatJobOutput(value);
+  return formatted.trim() !== "" ? formatted : empty;
+}

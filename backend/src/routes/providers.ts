@@ -53,6 +53,10 @@ const txHashSchema = z.object({
   tx_hash: z.string().refine((value) => /^0x[0-9a-fA-F]{64}$/.test(value), "tx_hash_must_be_32_byte_hex"),
 });
 
+const listQuerySchema = z.object({
+  owner_wallet: evmAddressSchema("owner_wallet").optional(),
+});
+
 const providerResponseSchema = z.object({
   request_id: z.string(),
   registry_provider_id: z.string().nullable(),
@@ -118,10 +122,21 @@ export async function providersRoutes(app: FastifyInstance) {
     schema: {
       tags: ["Providers"],
       summary: "List all providers",
+      querystring: listQuerySchema,
       response: { 200: z.array(providerResponseSchema) },
     },
-  }, async (_req, reply) => {
+  }, async (req, reply) => {
+    const query = listQuerySchema.safeParse(req.query);
+    if (!query.success) return sendZodError(reply, query.error);
+
+    const ownerWallet = query.data.owner_wallet
+      ? getAddress(query.data.owner_wallet)
+      : undefined;
+
     const providers = await prisma.provider.findMany({
+      where: ownerWallet
+        ? { owner_wallet: { equals: ownerWallet, mode: "insensitive" } }
+        : undefined,
       orderBy: { created_at: "desc" },
     });
     return reply.send(providers.map(serializeProvider));

@@ -291,7 +291,7 @@ export default function RegisterPage() {
                 <div className="text-[10px] uppercase tracking-widest font-bold text-black/40 mb-4">
                   Wallet
                 </div>
-                <ConnectButton />
+                <ConnectButton signInRequired={false} />
                 {!isConnected && (
                   <p className="text-[11px] text-black/40 mt-3">
                     Connect MetaMask — used as{" "}

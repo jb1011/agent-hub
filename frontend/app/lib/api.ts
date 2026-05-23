@@ -11,10 +11,19 @@ async function apiFetch<T>(path: string): Promise<T> {
 export const apiKeys = {
   providers: ["providers"] as const,
   provider: (id: string) => ["providers", id] as const,
+  myProviders: (wallet: string) =>
+    ["providers", "mine", wallet.toLowerCase()] as const,
 };
 
 export const fetchProviders = (): Promise<Provider[]> =>
   apiFetch<Provider[]>("/providers");
+
+export const fetchProvidersByOwner = (
+  ownerWallet: string,
+): Promise<Provider[]> =>
+  apiFetch<Provider[]>(
+    `/providers?owner_wallet=${encodeURIComponent(ownerWallet)}`,
+  );
 
 export const fetchProvider = (requestId: string): Promise<Provider> =>
   apiFetch<Provider>(`/providers/${encodeURIComponent(requestId)}`);
