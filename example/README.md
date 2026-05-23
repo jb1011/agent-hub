@@ -36,6 +36,7 @@ npm run providers:list --prefix example
 npm run jobs:list --prefix example
 npm run jobs:list --prefix example -- FUNDED
 npm run register:provider --prefix example
+npm run update:provider --prefix example
 npm run create:job --prefix example
 npm run start:job --prefix example
 npm run accept:job --prefix example
@@ -89,12 +90,13 @@ The scripts only read `API_URL`, `RPC_URL`, and `SIGNER_WALLET_PK` from the envi
 cp example/.env.example example/.env
 ```
 
-`jobs:list`, `create:job`, and `accept:job` use wallet auth, so `SIGNER_WALLET_PK` must be set. `jobs:list` returns jobs owned by that wallet.
+`jobs:list`, `create:job`, `update:provider`, and `accept:job` use wallet auth, so `SIGNER_WALLET_PK` must be set. `update:provider` requires a wallet matching the provider `owner_wallet`; `jobs:list` returns jobs owned by that wallet.
 
 Registration payloads live in:
 
 ```text
 example/config/provider.json
+example/config/provider-update.json
 example/config/job.json
 example/config/start-job.json
 example/config/acceptance.json
@@ -149,6 +151,30 @@ const result = await client.providers.create({
 The API creates the provider in the database with `status: REGISTERED`, computes a `metadataCommitment` from the metadata, signs the EIP-712 authorization server-side, then returns the `registerProvider` transaction. The on-chain `msg.sender` must be `owner_wallet`, and `signer_wallet` becomes the key authorized to sign `StartJobAuthorization` for that provider. If `signer_wallet` is omitted, the backend defaults to `owner_wallet`. If `SIGNER_WALLET_PK` and `RPC_URL` are set, the script signs and broadcasts the transaction with ethers. Otherwise, it only prints the prepared transaction.
 
 After on-chain confirmation, the listener fills `registry_provider_id` and sets the provider to `ACTIVE`. The script waits for this link when the transaction was sent; otherwise fetch it via `npm run providers:list --prefix example` and put it in `example/config/job.json` under `provider_id`.
+
+## Update a provider
+
+`scripts/update-provider.ts` reads `example/config/provider-update.json` and calls the authenticated owner-only endpoint:
+
+```ts
+const signedClient = await userClient();
+
+const provider = await signedClient.providers.update(provider_request_id, {
+  description,
+  api_base_url,
+  price_usdc,
+  max_concurrent_jobs,
+  timeout_seconds,
+});
+```
+
+`provider_request_id` is the API `request_id` (`bytes32`), not the on-chain `registry_provider_id`. You can also pass it on the command line:
+
+```bash
+npm run update:provider --prefix example -- 0xYOUR_PROVIDER_API_REQUEST_ID
+```
+
+The backend authenticates the request with the wallet bearer token. `SIGNER_WALLET_PK` must therefore correspond to the provider `owner_wallet`.
 
 ## Create a job
 

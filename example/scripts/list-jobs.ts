@@ -67,26 +67,10 @@ function readQuery(): ListJobsQuery | undefined {
   return Object.keys(compactQuery).length > 0 ? compactQuery : undefined;
 }
 
-function shortWallet(value: string): string {
-  return value.length > 12 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value;
-}
-
 const query = readQuery();
 const signedUserClient = await userClient();
 const jobs = await signedUserClient.jobs.list(query);
 
 console.log(`Skill Hub API: ${API_URL}`);
 console.log(`Found ${jobs.length} job(s)`);
-
-for (const job of jobs) {
-  console.log(
-    [
-      `[${job.request_id}]`,
-      `job_id=${job.job_id ?? "pending"}`,
-      `status=${job.status}`,
-      `provider=${job.provider_request_id}`,
-      `user=${shortWallet(job.user_wallet)}`,
-      `created=${job.created_at}`,
-    ].join(" ")
-  );
-}
+console.log(JSON.stringify(jobs, null, 2));

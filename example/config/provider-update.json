@@ -1,0 +1,10 @@
+{
+  "provider_request_id": "0x5c199e5a428087158e40763bfdd1fe23d1bbad2e2102f221adfd0e010a4c773a",
+  "updates": {
+    "description": "Updated provider metadata",
+    "api_base_url": "https://provider.forsure.com",
+    "price_usdc": 0.02,
+    "max_concurrent_jobs": 3,
+    "timeout_seconds": 600
+  }
+}

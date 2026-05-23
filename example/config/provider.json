@@ -1,10 +1,10 @@
 {
-  "name": "Demo Provider",
-  "description": "Test provider E2E",
+  "name": "ForSure Provider",
+  "description": "Real provider for ForSure",
   "owner_wallet": "0x8A567b01249c7Da966016C742c234B38c2a68122",
   "signer_wallet": "0x8A567b01249c7Da966016C742c234B38c2a68122",
   "payout_wallet": "0x8A567b01249c7Da966016C742c234B38c2a68122",
-  "api_base_url": "https://provider.example.com",
+  "api_base_url": "https://provider.forsure.com",
   "trust_level": "UNVERIFIED",
   "service_type": "text_generation",
   "input_schema": {
@@ -16,7 +16,7 @@
   "output_schema": {
     "type": "object"
   },
-  "price_usdc": 1,
+  "price_usdc": 0.01,
   "max_concurrent_jobs": 2,
   "timeout_seconds": 300
 }

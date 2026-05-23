@@ -6,6 +6,7 @@
     "health": "tsx scripts/health.ts",
     "auth:wallet": "tsx scripts/auth-wallet.ts",
     "providers:list": "tsx scripts/list-providers.ts",
+    "update:provider": "tsx scripts/update-provider.ts",
     "jobs:list": "tsx scripts/list-jobs.ts",
     "create:job": "tsx scripts/create-job.ts",
     "register:provider": "tsx scripts/register-provider.ts",

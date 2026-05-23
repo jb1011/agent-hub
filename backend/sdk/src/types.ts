@@ -102,7 +102,9 @@ export interface CreateProviderInput {
   timeout_seconds?: number;
 }
 
-export type UpdateProviderInput = Partial<CreateProviderInput>;
+export interface UpdateProviderInput extends Partial<CreateProviderInput> {
+  status?: ProviderStatus;
+}
 
 export interface CreateProviderResult {
   request_id: string;
