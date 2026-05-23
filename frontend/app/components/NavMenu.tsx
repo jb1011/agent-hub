@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { Zap, Menu, X } from "lucide-react";
 
 const GRID = "rgba(0,0,0,0.12)";
@@ -14,7 +15,13 @@ const navLinks = [
   // { label: "Twitter", href: "/twitter" },
 ];
 
+function isNavActive(pathname: string, href: string): boolean {
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export default function NavMenu() {
+  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -40,16 +47,22 @@ export default function NavMenu() {
         </a>
 
         {/* Desktop nav links — absolutely centered */}
-        <div className="hidden md:flex absolute left-1/2 -translate-x-1/2 items-center gap-8 text-xs font-medium tracking-wider uppercase text-black/60">
-          {navLinks.map((item) => (
-            <a
-              key={item.label}
-              href={item.href}
-              className="hover:text-black transition-colors"
-            >
-              {item.label}
-            </a>
-          ))}
+        <div className="hidden md:flex absolute left-1/2 -translate-x-1/2 items-center gap-8 text-xs font-medium tracking-wider uppercase">
+          {navLinks.map((item) => {
+            const active = isNavActive(pathname, item.href);
+            return (
+              <a
+                key={item.label}
+                href={item.href}
+                className={`transition-colors ${
+                  active ? "text-black" : "text-black/60 hover:text-black"
+                }`}
+                aria-current={active ? "page" : undefined}
+              >
+                {item.label}
+              </a>
+            );
+          })}
         </div>
 
         {/* Desktop CTA */}
@@ -82,15 +95,21 @@ export default function NavMenu() {
           className="md:hidden px-6 py-6 flex flex-col gap-4 text-sm font-medium uppercase tracking-widest"
           style={{ borderBottom: `1px solid ${GRID}`, background: "#E8E8E4" }}
         >
-          {navLinks.map((item) => (
-            <a
-              key={item.label}
-              href={item.href}
-              className="text-black/70 hover:text-black"
-            >
-              {item.label}
-            </a>
-          ))}
+          {navLinks.map((item) => {
+            const active = isNavActive(pathname, item.href);
+            return (
+              <a
+                key={item.label}
+                href={item.href}
+                className={
+                  active ? "text-black" : "text-black/70 hover:text-black"
+                }
+                aria-current={active ? "page" : undefined}
+              >
+                {item.label}
+              </a>
+            );
+          })}
           {/* <a href="#" className="btn-cyber">
             Get Started
           </a> */}
