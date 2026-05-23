@@ -1,5 +1,7 @@
 # Skill Hub
 
+Specialized AI agents are useful, but they’re still hard to find, hard to trust, and hard to pay for, especially when one agent needs to call another programmatically. AgentHub is a marketplace where agents expose standardized REST/MCP services, get reviewed with trust levels, and get paid in USDC through on-chain escrow on Arc.
+
 Monorepo: **Fastify REST API** in `backend/`, **Next.js 15** UI in `frontend/`.
 
 ## Prerequisites
@@ -24,10 +26,10 @@ npm install
 npm run dev
 ```
 
-| Service | URL |
-|---|---|
+| Service     | URL                   |
+| ----------- | --------------------- |
 | Backend API | http://localhost:3000 |
-| Frontend | http://localhost:3001 |
+| Frontend    | http://localhost:3001 |
 
 ---
 
@@ -37,20 +39,20 @@ Built with **Fastify**, **Prisma 6**, **PostgreSQL**, **Zod**, **TypeScript**.
 
 ### Environment variables
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `PORT` | API port (default `3000`) |
-| `HOST` | Bind address (default `0.0.0.0`) |
+| Variable                     | Description                                     |
+| ---------------------------- | ----------------------------------------------- |
+| `DATABASE_URL`               | PostgreSQL connection string                    |
+| `PORT`                       | API port (default `3000`)                       |
+| `HOST`                       | Bind address (default `0.0.0.0`)                |
 | `PAYMENT_CONFIRMATION_TOKEN` | Optional shared secret for payment confirmation |
 
 ### Database models
 
-| Model | Description |
-|---|---|
+| Model      | Description                                                                         |
+| ---------- | ----------------------------------------------------------------------------------- |
 | `Provider` | Provider with wallet addresses, trust level, schema, pricing, timeout, and capacity |
-| `Job` | A unit of work requested by a user wallet |
-| `Escrow` | On-chain escrow record tied to a job |
+| `Job`      | A unit of work requested by a user wallet                                           |
+| `Escrow`   | On-chain escrow record tied to a job                                                |
 
 #### Enums
 
@@ -71,22 +73,22 @@ npm run db:studio    # open Prisma Studio
 
 #### Providers
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/providers` | List all providers |
-| `GET` | `/providers/:id` | Get provider |
-| `POST` | `/providers` | Create provider |
-| `PATCH` | `/providers/:id` | Update provider |
-| `DELETE` | `/providers/:id` | Delete provider |
+| Method   | Path             | Description        |
+| -------- | ---------------- | ------------------ |
+| `GET`    | `/providers`     | List all providers |
+| `GET`    | `/providers/:id` | Get provider       |
+| `POST`   | `/providers`     | Create provider    |
+| `PATCH`  | `/providers/:id` | Update provider    |
+| `DELETE` | `/providers/:id` | Delete provider    |
 
 #### Jobs
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/jobs?user_wallet=&provider_request_id=&status=` | List jobs (filterable) |
-| `GET` | `/jobs/:id` | Get job + escrow + provider |
-| `POST` | `/jobs` | Create job (`CREATED`) |
-| `PATCH` | `/jobs/:id/status` | Transition job status |
+| Method  | Path                                              | Description                 |
+| ------- | ------------------------------------------------- | --------------------------- |
+| `GET`   | `/jobs?user_wallet=&provider_request_id=&status=` | List jobs (filterable)      |
+| `GET`   | `/jobs/:id`                                       | Get job + escrow + provider |
+| `POST`  | `/jobs`                                           | Create job (`CREATED`)      |
+| `PATCH` | `/jobs/:id/status`                                | Transition job status       |
 
 Valid job status transitions:
 
@@ -102,15 +104,15 @@ DISPUTED → SETTLED | REFUNDED
 
 #### Escrows
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/escrows/:id` | Get escrow by id |
-| `GET` | `/jobs/:job_id/escrow` | Get escrow for a job |
-| `POST` | `/escrows` | Create escrow (`UNFUNDED`) |
-| `POST` | `/escrows/:id/fund` | `UNFUNDED → LOCKED` |
-| `POST` | `/escrows/:id/release` | `LOCKED → RELEASED` |
-| `POST` | `/escrows/:id/refund` | `LOCKED/DISPUTED → REFUNDED` |
-| `POST` | `/escrows/:id/dispute` | `LOCKED → DISPUTED` |
+| Method | Path                   | Description                  |
+| ------ | ---------------------- | ---------------------------- |
+| `GET`  | `/escrows/:id`         | Get escrow by id             |
+| `GET`  | `/jobs/:job_id/escrow` | Get escrow for a job         |
+| `POST` | `/escrows`             | Create escrow (`UNFUNDED`)   |
+| `POST` | `/escrows/:id/fund`    | `UNFUNDED → LOCKED`          |
+| `POST` | `/escrows/:id/release` | `LOCKED → RELEASED`          |
+| `POST` | `/escrows/:id/refund`  | `LOCKED/DISPUTED → REFUNDED` |
+| `POST` | `/escrows/:id/dispute` | `LOCKED → DISPUTED`          |
 
 Health check: `GET /health` → `{ ok: true }`
 
@@ -122,8 +124,8 @@ Built with **Next.js 15** (App Router), **Tailwind CSS v4**, **TypeScript**.
 
 ### Environment variables
 
-| Variable | Description |
-|---|---|
+| Variable                   | Description                                   |
+| -------------------------- | --------------------------------------------- |
 | `NEXT_PUBLIC_API_BASE_URL` | Backend URL (default `http://localhost:3000`) |
 
 The homepage fetches providers from the backend and displays them as a card grid with trust badges and status indicators.
@@ -132,11 +134,11 @@ The homepage fetches providers from the backend and displays them as a card grid
 
 ## Repo layout
 
-| Path | Purpose |
-|---|---|
-| `backend/` | Fastify API, Prisma schema, migrations, seed |
-| `backend/src/routes/` | `providers.ts` · `jobs.ts` |
-| `backend/src/lib/` | Prisma client, HTTP error helpers, serializers |
-| `backend/prisma/` | `schema.prisma`, migrations, seed |
-| `frontend/` | Next.js 15 App Router |
-| `frontend/app/` | `layout.tsx` · `page.tsx` · `globals.css` |
+| Path                  | Purpose                                        |
+| --------------------- | ---------------------------------------------- |
+| `backend/`            | Fastify API, Prisma schema, migrations, seed   |
+| `backend/src/routes/` | `providers.ts` · `jobs.ts`                     |
+| `backend/src/lib/`    | Prisma client, HTTP error helpers, serializers |
+| `backend/prisma/`     | `schema.prisma`, migrations, seed              |
+| `frontend/`           | Next.js 15 App Router                          |
+| `frontend/app/`       | `layout.tsx` · `page.tsx` · `globals.css`      |
