@@ -1,5 +1,13 @@
 import type { FastifyBaseLogger } from "fastify";
-import { Contract, getAddress, WebSocketProvider, type ContractEventPayload } from "ethers";
+import {
+  Contract,
+  Interface,
+  JsonRpcProvider,
+  WebSocketProvider,
+  getAddress,
+  isHexString,
+  type ContractEventPayload,
+} from "ethers";
 import { prisma } from "../lib/prisma.js";
 import {
   agentHubRegistryAddress,
@@ -11,6 +19,8 @@ const REGISTRY_ABI = [
   "event ProviderRegistered(uint256 indexed providerId, address indexed owner, address indexed signer, address payoutWallet, uint256 price, uint64 workTimeout, bytes32 metadataCommitment)",
 ] as const;
 
+const REGISTRY_INTERFACE = new Interface(REGISTRY_ABI);
+
 type ListenerHandle = {
   close: () => Promise<void>;
 };
@@ -20,11 +30,19 @@ function env(name: string): string | null {
   return value ? value : null;
 }
 
+function firstEnv(names: string[]): string | null {
+  for (const name of names) {
+    const value = env(name);
+    if (value) return value;
+  }
+  return null;
+}
+
 function normalizeBytes32(value: string): string {
   return value.toLowerCase();
 }
 
-async function markProviderRegistered(
+export async function markProviderRegistered(
   onchainProviderId: string,
   owner: string,
   metadataCommitment: string,
@@ -36,11 +54,16 @@ async function markProviderRegistered(
 
   const candidates = await prisma.provider.findMany({
     where: {
-      registry_provider_id: null,
       OR: [
-        { metadata_commitment: normalizedCommitment },
-        { metadata_commitment: null },
+        { registry_provider_id: null },
+        { registry_provider_id: onchainProviderId },
       ],
+      AND: {
+        OR: [
+          { metadata_commitment: normalizedCommitment },
+          { metadata_commitment: null },
+        ],
+      },
     },
     orderBy: { created_at: "desc" },
   });
@@ -126,6 +149,71 @@ async function markProviderRegistered(
     },
     "Local provider marked active and linked to on-chain provider id from ProviderRegistered event"
   );
+}
+
+function receiptProviderFor(url: string): JsonRpcProvider | WebSocketProvider {
+  return url.startsWith("ws:") || url.startsWith("wss:")
+    ? new WebSocketProvider(url)
+    : new JsonRpcProvider(url);
+}
+
+async function destroyReceiptProvider(provider: JsonRpcProvider | WebSocketProvider): Promise<void> {
+  await provider.destroy();
+}
+
+export async function syncProviderRegisteredFromTransaction(
+  txHash: string,
+  logger: FastifyBaseLogger
+) {
+  if (!isHexString(txHash, 32)) {
+    throw new Error("tx_hash_must_be_32_byte_hex");
+  }
+
+  const rpcUrl = firstEnv(["ARC_RPC_URL", "RPC_URL", "ARC_RPC_WS_URL"]);
+  if (!rpcUrl) throw new Error("missing_env_ARC_RPC_URL");
+
+  const registryContractAddress = agentHubRegistryAddress();
+  const provider = receiptProviderFor(rpcUrl);
+
+  try {
+    const receipt = await provider.getTransactionReceipt(txHash);
+    if (!receipt) throw new Error("transaction_receipt_not_found");
+
+    const synced: Array<{
+      provider_id: string;
+      owner: string;
+      metadata_commitment: string;
+    }> = [];
+    const registryAddress = registryContractAddress.toLowerCase();
+
+    for (const log of receipt.logs) {
+      if (log.address.toLowerCase() !== registryAddress) continue;
+
+      let parsed;
+      try {
+        parsed = REGISTRY_INTERFACE.parseLog(log);
+      } catch {
+        continue;
+      }
+
+      if (parsed?.name !== "ProviderRegistered") continue;
+
+      const onchainProviderId = parsed.args.providerId.toString();
+      const owner = parsed.args.owner as string;
+      const metadataCommitment = parsed.args.metadataCommitment as string;
+      await markProviderRegistered(onchainProviderId, owner, metadataCommitment, txHash, logger);
+      synced.push({
+        provider_id: onchainProviderId,
+        owner: getAddress(owner),
+        metadata_commitment: metadataCommitment,
+      });
+    }
+
+    if (synced.length === 0) throw new Error("provider_registered_event_not_found");
+    return synced;
+  } finally {
+    await destroyReceiptProvider(provider);
+  }
 }
 
 export function startRegistryProviderRegisteredListener(

@@ -2,6 +2,8 @@ import type {
   Provider,
   CreateProviderInput,
   CreateProviderResult,
+  SyncProviderRegistrationInput,
+  SyncProviderRegistrationResult,
   UpdateProviderInput,
 } from "./types.js";
 
@@ -44,6 +46,23 @@ export class ProvidersResource {
       method: "PATCH",
       body: JSON.stringify(input),
     });
+  }
+
+  /**
+   * Force-sync provider registration from a ProviderRegistered transaction.
+   * POST /providers/:id/sync-registration
+   */
+  syncRegistration(
+    providerId: string,
+    input: SyncProviderRegistrationInput
+  ): Promise<SyncProviderRegistrationResult> {
+    return this.request<SyncProviderRegistrationResult>(
+      `/providers/${encodeURIComponent(providerId)}/sync-registration`,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      }
+    );
   }
 
   /**

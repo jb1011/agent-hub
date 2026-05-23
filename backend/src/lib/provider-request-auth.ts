@@ -1,7 +1,8 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { getAddress, isAddress, keccak256, toUtf8Bytes, verifyMessage } from "ethers";
-import type { Provider } from "@prisma/client";
+import { Prisma, type Provider } from "@prisma/client";
 import { isBytes32 } from "./create-job-authorization.js";
+import { prisma } from "./prisma.js";
 import { isUint256String } from "./uint256.js";
 
 type AuthenticatedProvider = Pick<Provider, "request_id" | "registry_provider_id" | "signer_wallet">;
@@ -23,6 +24,8 @@ const REQUIRED_PROVIDER_AUTH_HEADERS = [
   "x-nonce",
   "x-query-hash",
 ] as const;
+
+const DEFAULT_PROVIDER_REQUEST_AUTH_MAX_AGE_SECONDS = 300;
 
 export function hashProviderRequestPart(value: string): string {
   return keccak256(toUtf8Bytes(value));
@@ -78,23 +81,71 @@ function isValidProviderId(providerId: string): boolean {
   return isBytes32(providerId) || isUint256String(providerId);
 }
 
-function isTimestampInFuture(timestampHeader: string): boolean | "invalid" {
-  const timestamp = Number(timestampHeader);
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return "invalid";
+function maxAgeSeconds(): number {
+  const raw = process.env.PROVIDER_REQUEST_AUTH_MAX_AGE_SECONDS?.trim();
+  if (!raw) return DEFAULT_PROVIDER_REQUEST_AUTH_MAX_AGE_SECONDS;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) return DEFAULT_PROVIDER_REQUEST_AUTH_MAX_AGE_SECONDS;
+  return value;
+}
 
-  const timestampMs = timestamp > 1_000_000_000_000 ? timestamp : timestamp * 1000;
-  return timestampMs > Date.now();
+function timestampMs(timestampHeader: string): number | "invalid" {
+  const timestamp = Number(timestampHeader);
+  if (!Number.isSafeInteger(timestamp) || timestamp <= 0) return "invalid";
+
+  return timestamp > 1_000_000_000_000 ? timestamp : timestamp * 1000;
+}
+
+function validateTimestamp(timestampHeader: string, now = Date.now()):
+  | { ok: true; timestampMs: number; expiresAt: Date }
+  | { ok: false; error: "timestamp_invalid" | "timestamp_in_future" | "timestamp_expired" } {
+  const parsedTimestampMs = timestampMs(timestampHeader);
+  if (parsedTimestampMs === "invalid") return { ok: false, error: "timestamp_invalid" };
+  if (parsedTimestampMs > now) return { ok: false, error: "timestamp_in_future" };
+
+  const expiresAtMs = parsedTimestampMs + maxAgeSeconds() * 1000;
+  if (expiresAtMs <= now) return { ok: false, error: "timestamp_expired" };
+
+  return { ok: true, timestampMs: parsedTimestampMs, expiresAt: new Date(expiresAtMs) };
 }
 
 function sameHash(actual: string, expected: string): boolean {
   return actual.toLowerCase() === expected.toLowerCase();
 }
 
-export function verifyProviderRequestHeaders(
+async function reserveProviderNonce(
+  providerRequestId: string,
+  nonce: string,
+  expiresAt: Date
+): Promise<"ok" | "replayed" | "failed"> {
+  try {
+    await prisma.providerRequestNonce.deleteMany({
+      where: {
+        provider_request_id: providerRequestId,
+        expires_at: { lte: new Date() },
+      },
+    });
+    await prisma.providerRequestNonce.create({
+      data: {
+        provider_request_id: providerRequestId,
+        nonce,
+        expires_at: expiresAt,
+      },
+    });
+    return "ok";
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return "replayed";
+    }
+    return "failed";
+  }
+}
+
+export async function verifyProviderRequestHeaders(
   req: FastifyRequest,
   reply: FastifyReply,
   provider: AuthenticatedProvider
-): ProviderRequestAuthResult {
+): Promise<ProviderRequestAuthResult> {
   for (const name of REQUIRED_PROVIDER_AUTH_HEADERS) {
     if (!header(req, name)) {
       return { ok: false, reply: reply.status(401).send({ error: `missing_header_${name}` }) };
@@ -125,12 +176,10 @@ export function verifyProviderRequestHeaders(
     return { ok: false, reply: reply.status(403).send({ error: "provider_address_does_not_match_signer" }) };
   }
 
-  const timestampState = isTimestampInFuture(timestamp);
-  if (timestampState === "invalid") {
-    return { ok: false, reply: reply.status(400).send({ error: "timestamp_invalid" }) };
-  }
-  if (timestampState) {
-    return { ok: false, reply: reply.status(401).send({ error: "timestamp_in_future" }) };
+  const timestampState = validateTimestamp(timestamp);
+  if (!timestampState.ok) {
+    const status = timestampState.error === "timestamp_invalid" ? 400 : 401;
+    return { ok: false, reply: reply.status(status).send({ error: timestampState.error }) };
   }
 
   const actualBodyHash = hashProviderRequestPart(rawBody(req));
@@ -159,6 +208,14 @@ export function verifyProviderRequestHeaders(
     }
   } catch {
     return { ok: false, reply: reply.status(401).send({ error: "signature_invalid" }) };
+  }
+
+  const nonceState = await reserveProviderNonce(provider.request_id, nonce, timestampState.expiresAt);
+  if (nonceState === "replayed") {
+    return { ok: false, reply: reply.status(401).send({ error: "nonce_replayed" }) };
+  }
+  if (nonceState === "failed") {
+    return { ok: false, reply: reply.status(500).send({ error: "nonce_reservation_failed" }) };
   }
 
   return { ok: true };

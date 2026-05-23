@@ -10,7 +10,8 @@ export interface SkillHubClientOptions {
    * Provider request signing configuration.
    *
    * When present, the SDK automatically adds the provider auth headers to
-   * POST /jobs/start-next-job-request, /jobs/:id/start-job and /jobs/:id/job-finish.
+   * POST /jobs/start-next-job-request, /jobs/:id/start-job,
+   * /jobs/:id/job-finish and /jobs/:id/provider-cancel.
    */
   providerAuth?: ProviderRequestAuthOptions;
 
@@ -108,6 +109,20 @@ export interface CreateProviderResult {
   transaction: PreparedContractTransaction;
 }
 
+export interface SyncProviderRegistrationInput {
+  tx_hash: string;
+}
+
+export interface SyncedProviderRegisteredEvent {
+  provider_id: string;
+  owner: string;
+  metadata_commitment: string;
+}
+
+export interface SyncProviderRegistrationResult extends Provider {
+  synced_events: SyncedProviderRegisteredEvent[];
+}
+
 // ---------------------------------------------------------------------------
 // Jobs
 // ---------------------------------------------------------------------------
@@ -170,6 +185,20 @@ export interface CreateJobInput {
   review_deadline?: string;
 }
 
+export interface SyncJobFundingInput {
+  tx_hash: string;
+}
+
+export interface SyncedJobCreatedEvent {
+  job_id: string;
+  request_id: string;
+  queue_deadline: string;
+}
+
+export interface SyncJobFundingResult extends Job {
+  synced_events: SyncedJobCreatedEvent[];
+}
+
 export interface ListJobsQuery {
   request_id?: string;
   job_id?: string;
@@ -206,6 +235,10 @@ export interface StartJobResult {
   relayer_address: string;
   block_number: number | null;
   gas_used: string | null;
+}
+
+export interface ProviderCancelInput extends AuthorizationExpiryInput {
+  error_message?: string;
 }
 
 export interface OutputCommitmentInput extends AuthorizationExpiryInput {
@@ -258,6 +291,15 @@ export interface StoredNoDeliveryAttestation {
   expires_at: number;
   no_delivery_attester_signature: string;
   refund_with_no_delivery_attestation_args: RefundWithNoDeliveryAttestationArgs;
+}
+
+export interface ProviderCancelResult extends Job {
+  refund_with_no_delivery_attestation_args: RefundWithNoDeliveryAttestationArgs;
+  transaction_hash: string;
+  relayer_address: string;
+  block_number: number | null;
+  gas_used: string | null;
+  refund_amount: string | null;
 }
 
 export interface SettleWithUserSignatureArgs {

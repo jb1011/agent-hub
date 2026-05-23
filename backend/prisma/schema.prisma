@@ -63,10 +63,24 @@ model Provider {
   updated_at          DateTime       @updatedAt
 
   jobs Job[]
+  request_nonces ProviderRequestNonce[]
 
   @@index([status])
   @@index([owner_wallet])
   @@index([owner_wallet, metadata_commitment])
+}
+
+model ProviderRequestNonce {
+  id                  String   @id @default(cuid())
+  provider_request_id String
+  provider            Provider @relation(fields: [provider_request_id], references: [request_id], onDelete: Cascade)
+  nonce               String
+  used_at             DateTime @default(now()) @db.Timestamptz
+  expires_at          DateTime @db.Timestamptz
+
+  @@unique([provider_request_id, nonce])
+  @@index([expires_at])
+  @@map("provider_request_nonces")
 }
 
 model Job {

@@ -5,6 +5,7 @@ const PROVIDER_AUTH_ROUTES = [
   "/start-next-job-request",
   "/start-job",
   "/job-finish",
+  "/provider-cancel",
 ] as const;
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;

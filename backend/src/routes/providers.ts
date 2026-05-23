@@ -10,6 +10,7 @@ import { uint256StringSchema } from "../lib/uint256.js";
 import { generateBytes32Id } from "../lib/bytes32-id.js";
 import { agentHubRegistryAddress, buildRegisterProviderCall } from "../lib/registry-call.js";
 import { RegisterProviderAuthorizationError } from "../lib/register-provider-authorization.js";
+import { syncProviderRegisteredFromTransaction } from "../listeners/registry-provider-registered.js";
 
 const evmAddressSchema = (fieldName: string) =>
   z.string().refine(isAddress, `${fieldName}_must_be_evm_address`);
@@ -45,6 +46,10 @@ const updateSchema = createSchema.partial().extend({
 
 const idParamsSchema = z.object({
   id: bytes32StringSchema("request_id"),
+});
+
+const txHashSchema = z.object({
+  tx_hash: z.string().refine((value) => /^0x[0-9a-fA-F]{64}$/.test(value), "tx_hash_must_be_32_byte_hex"),
 });
 
 const providerResponseSchema = z.object({
@@ -240,6 +245,62 @@ export async function providersRoutes(app: FastifyInstance) {
       },
     });
     return reply.send(serializeProvider(provider));
+  });
+
+  app.post<{ Params: { id: string } }>("/providers/:id/sync-registration", {
+    schema: {
+      tags: ["Providers"],
+      summary: "Force-sync a provider from a ProviderRegistered transaction if the listener missed it",
+      params: idParamsSchema,
+      body: txHashSchema,
+      response: {
+        200: providerResponseSchema.extend({
+          synced_events: z.array(z.object({
+            provider_id: z.string(),
+            owner: z.string(),
+            metadata_commitment: z.string(),
+          })),
+        }),
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+        500: z.object({ error: z.string() }),
+      },
+    },
+  }, async (req, reply) => {
+    const params = idParamsSchema.safeParse(req.params);
+    if (!params.success) return sendZodError(reply, params.error);
+    const parsed = txHashSchema.safeParse(req.body);
+    if (!parsed.success) return sendZodError(reply, parsed.error);
+
+    const existing = await prisma.provider.findUnique({
+      where: { request_id: params.data.id },
+    });
+    if (!existing) return notFound(reply);
+
+    try {
+      const syncedEvents = await syncProviderRegisteredFromTransaction(parsed.data.tx_hash, req.log);
+      const provider = await prisma.provider.findUniqueOrThrow({
+        where: { request_id: params.data.id },
+      });
+      if (!provider.registry_provider_id || provider.status !== "ACTIVE") {
+        return reply.status(409).send({ error: "provider_registered_event_does_not_match_provider" });
+      }
+      const matched = syncedEvents.some((event) =>
+        event.provider_id === provider.registry_provider_id &&
+        event.owner.toLowerCase() === provider.owner_wallet.toLowerCase()
+      );
+      if (!matched) return reply.status(409).send({ error: "provider_registered_event_does_not_match_provider" });
+
+      return reply.send({
+        ...serializeProvider(provider),
+        synced_events: syncedEvents,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "sync_registration_failed";
+      const status = message.includes("missing_env") ? 500 : message.includes("not_found") ? 404 : 409;
+      return reply.status(status as 404 | 409 | 500).send({ error: message });
+    }
   });
 
   app.delete<{ Params: { id: string } }>("/providers/:id", {

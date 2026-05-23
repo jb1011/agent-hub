@@ -3,11 +3,15 @@ import type {
   JobWithDetails,
   CreateJobInput,
   CreateJobResult,
+  SyncJobFundingInput,
+  SyncJobFundingResult,
   ListJobsQuery,
   AuthorizationExpiryInput,
   StartAuthorizationRequestResult,
   StartJobInput,
   StartJobResult,
+  ProviderCancelInput,
+  ProviderCancelResult,
   FinishJobInput,
   FinishJobResult,
   OutputCommitmentInput,
@@ -54,6 +58,17 @@ export class JobsResource {
    */
   create(input: CreateJobInput): Promise<CreateJobResult> {
     return this.request<CreateJobResult>("/jobs", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  /**
+   * Force-sync job funding from a JobCreated transaction.
+   * POST /jobs/:id/sync-funding
+   */
+  syncFunding(id: string, input: SyncJobFundingInput): Promise<SyncJobFundingResult> {
+    return this.request<SyncJobFundingResult>(this.path(id, "/sync-funding"), {
       method: "POST",
       body: JSON.stringify(input),
     });
@@ -115,6 +130,17 @@ export class JobsResource {
         body: JSON.stringify(input),
       }
     );
+  }
+
+  /**
+   * Cancel a running job as the provider and relay an immediate refund.
+   * POST /jobs/:id/provider-cancel
+   */
+  providerCancel(id: string, input: ProviderCancelInput = {}): Promise<ProviderCancelResult> {
+    return this.request<ProviderCancelResult>(this.path(id, "/provider-cancel"), {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   }
 
   /**

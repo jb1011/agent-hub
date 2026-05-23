@@ -1,5 +1,12 @@
 import type { FastifyBaseLogger } from "fastify";
-import { Contract, WebSocketProvider, type ContractEventPayload } from "ethers";
+import {
+  Contract,
+  Interface,
+  JsonRpcProvider,
+  WebSocketProvider,
+  isHexString,
+  type ContractEventPayload,
+} from "ethers";
 import { prisma } from "../lib/prisma.js";
 
 const ESCROW_ABI = [
@@ -12,6 +19,8 @@ const ESCROW_ABI = [
   "event JobRefundedAfterFinalTimeout(uint256 indexed jobId, uint256 amount)",
 ] as const;
 
+const ESCROW_INTERFACE = new Interface(ESCROW_ABI);
+
 type ListenerHandle = {
   close: () => Promise<void>;
 };
@@ -21,11 +30,19 @@ function env(name: string): string | null {
   return value ? value : null;
 }
 
+function firstEnv(names: string[]): string | null {
+  for (const name of names) {
+    const value = env(name);
+    if (value) return value;
+  }
+  return null;
+}
+
 function toDate(seconds: bigint): Date {
   return new Date(Number(seconds) * 1000);
 }
 
-async function markJobFunded(
+export async function markJobFunded(
   onchainJobId: string,
   requestId: string,
   queueDeadline: bigint,
@@ -119,6 +136,73 @@ async function markJobFunded(
     { requestId: localRequestId, onchainRequestId: requestId, jobId: onchainJobId, txHash },
     "Local job marked as funded from JobCreated event"
   );
+}
+
+function receiptProviderFor(url: string): JsonRpcProvider | WebSocketProvider {
+  return url.startsWith("ws:") || url.startsWith("wss:")
+    ? new WebSocketProvider(url)
+    : new JsonRpcProvider(url);
+}
+
+async function destroyReceiptProvider(provider: JsonRpcProvider | WebSocketProvider): Promise<void> {
+  await provider.destroy();
+}
+
+export async function syncJobCreatedFromTransaction(
+  txHash: string,
+  logger: FastifyBaseLogger
+) {
+  if (!isHexString(txHash, 32)) {
+    throw new Error("tx_hash_must_be_32_byte_hex");
+  }
+
+  const rpcUrl = firstEnv(["ARC_RPC_URL", "RPC_URL", "ARC_RPC_WS_URL"]);
+  if (!rpcUrl) throw new Error("missing_env_ARC_RPC_URL");
+
+  const escrowContractAddress = firstEnv(["ESCROW_CONTRACT_ADDRESS", "AGENT_HUB_ESCROW_ADDRESS"]);
+  if (!escrowContractAddress) throw new Error("missing_env_ESCROW_CONTRACT_ADDRESS");
+
+  const provider = receiptProviderFor(rpcUrl);
+
+  try {
+    const receipt = await provider.getTransactionReceipt(txHash);
+    if (!receipt) throw new Error("transaction_receipt_not_found");
+
+    const synced: Array<{
+      job_id: string;
+      request_id: string;
+      queue_deadline: string;
+    }> = [];
+    const escrowAddress = escrowContractAddress.toLowerCase();
+
+    for (const log of receipt.logs) {
+      if (log.address.toLowerCase() !== escrowAddress) continue;
+
+      let parsed;
+      try {
+        parsed = ESCROW_INTERFACE.parseLog(log);
+      } catch {
+        continue;
+      }
+
+      if (parsed?.name !== "JobCreated") continue;
+
+      const onchainJobId = parsed.args.jobId.toString();
+      const requestId = parsed.args.requestId as string;
+      const queueDeadline = parsed.args.queueDeadline as bigint;
+      await markJobFunded(onchainJobId, requestId, queueDeadline, txHash, logger);
+      synced.push({
+        job_id: onchainJobId,
+        request_id: requestId,
+        queue_deadline: queueDeadline.toString(),
+      });
+    }
+
+    if (synced.length === 0) throw new Error("job_created_event_not_found");
+    return synced;
+  } finally {
+    await destroyReceiptProvider(provider);
+  }
 }
 
 async function markJobStarted(

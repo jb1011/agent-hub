@@ -15,9 +15,11 @@ const ESCROW_ABI = [
   "function startJob(uint256 jobId, uint256 expiresAt, bytes providerSignature)",
   "function settleWithUserSignature(uint256 jobId, bytes32 outputCommitment, uint256 expiresAt, bytes userSignature)",
   "function settleAfterReviewTimeout(uint256 jobId, bytes32 outputCommitment, uint256 deliveredAt, uint256 expiresAt, bytes deliveryAttesterSignature)",
+  "function refundWithNoDeliveryAttestation(uint256 jobId, uint256 checkedAt, uint256 expiresAt, bytes noDeliveryAttesterSignature)",
   "event JobStarted(uint256 indexed jobId, uint256 indexed providerId, uint64 startedAt, uint64 workDeadline, uint64 finalRefundDeadline)",
   "event JobSettledWithUserSignature(uint256 indexed jobId, bytes32 outputCommitment, address providerPayoutWallet, uint256 providerAmount, uint256 protocolFee)",
   "event JobSettledAfterReviewTimeout(uint256 indexed jobId, bytes32 outputCommitment, uint64 deliveredAt, address providerPayoutWallet, uint256 providerAmount, uint256 protocolFee)",
+  "event JobRefundedWithNoDeliveryAttestation(uint256 indexed jobId, uint64 checkedAt, uint256 amount)",
   "error InvalidJob()",
   "error JobNotQueued()",
   "error JobNotRunning()",
@@ -73,6 +75,16 @@ export type RelayedSettleWithUserSignature = {
 
 export type RelayedSettleAfterReviewTimeout = RelayedSettleWithUserSignature & {
   delivered_at: number | null;
+};
+
+export type RelayedRefundWithNoDeliveryAttestation = {
+  transaction_hash: string;
+  relayer_address: string;
+  block_number: number | null;
+  gas_used: string | null;
+  refunded_at: number | null;
+  checked_at: number | null;
+  amount: string | null;
 };
 
 function firstEnv(names: string[]): string | null {
@@ -238,6 +250,26 @@ function receiptJobSettledAfterReviewTimeout(receipt: ContractTransactionReceipt
   return null;
 }
 
+function receiptJobRefundedWithNoDeliveryAttestation(receipt: ContractTransactionReceipt | null, contract: Contract) {
+  if (!receipt) return null;
+
+  for (const log of receipt.logs) {
+    let parsed;
+    try {
+      parsed = contract.interface.parseLog(log);
+    } catch {
+      continue;
+    }
+    if (parsed?.name !== "JobRefundedWithNoDeliveryAttestation") continue;
+    return {
+      checked_at: Number(parsed.args.checkedAt),
+      amount: parsed.args.amount.toString(),
+    };
+  }
+
+  return null;
+}
+
 export async function relayStartJob(params: {
   jobId: string;
   expiresAt: number;
@@ -290,6 +322,79 @@ export async function relayStartJob(params: {
       started_at: started?.started_at ?? null,
       work_deadline: started?.work_deadline ?? null,
       final_refund_deadline: started?.final_refund_deadline ?? null,
+    };
+  } finally {
+    await destroyProviderQuietly(provider);
+  }
+}
+
+export async function relayRefundWithNoDeliveryAttestation(params: {
+  jobId: string;
+  checkedAt: number;
+  expiresAt: number;
+  noDeliveryAttesterSignature: string;
+}): Promise<RelayedRefundWithNoDeliveryAttestation> {
+  const provider = providerFor(rpcUrl());
+
+  try {
+    const wallet = new Wallet(relayerPrivateKey(), provider);
+    const contract = new Contract(escrowContractAddress(), ESCROW_ABI, wallet);
+
+    const jobId = BigInt(params.jobId);
+    const checkedAt = BigInt(params.checkedAt);
+    const expiresAt = BigInt(params.expiresAt);
+    const latestBlock = await provider.getBlock("latest");
+    if (!latestBlock) throw new CreateJobAuthorizationError("latest_block_unavailable", 500);
+
+    const job = await contract.getJob(jobId) as EscrowJob;
+    const status = Number(job.status);
+    const statusName = JOB_STATUSES[status] ?? `UNKNOWN_${status}`;
+
+    if (status !== 2) {
+      throw new CreateJobAuthorizationError(`onchain_job_not_running_status_${statusName}`, 409);
+    }
+    if (expiresAt <= BigInt(latestBlock.timestamp)) {
+      throw new CreateJobAuthorizationError("authorization_expires_at_expired_onchain", 409);
+    }
+
+    let gasLimit: bigint;
+    try {
+      await contract.refundWithNoDeliveryAttestation.staticCall(
+        jobId,
+        checkedAt,
+        expiresAt,
+        params.noDeliveryAttesterSignature
+      );
+      const estimatedGas = await contract.refundWithNoDeliveryAttestation.estimateGas(
+        jobId,
+        checkedAt,
+        expiresAt,
+        params.noDeliveryAttesterSignature
+      );
+      gasLimit = estimatedGas * 120n / 100n;
+    } catch (err) {
+      throw explainContractError(err as EthersError, contract.interface, "refund_with_no_delivery_attestation");
+    }
+
+    const tx = await contract.refundWithNoDeliveryAttestation(
+      jobId,
+      checkedAt,
+      expiresAt,
+      params.noDeliveryAttesterSignature,
+      { gasLimit }
+    );
+    const receipt = await tx.wait();
+    const refunded = receiptJobRefundedWithNoDeliveryAttestation(receipt, contract);
+    const receiptBlock = receipt ? await provider.getBlock(receipt.blockNumber) : null;
+
+    return {
+      transaction_hash: tx.hash,
+      relayer_address: await wallet.getAddress(),
+      block_number: receipt?.blockNumber ?? null,
+      gas_used: receipt?.gasUsed?.toString() ?? null,
+      refunded_at: receiptBlock?.timestamp ?? null,
+      checked_at: refunded?.checked_at ?? null,
+      amount: refunded?.amount ?? null,
     };
   } finally {
     await destroyProviderQuietly(provider);
