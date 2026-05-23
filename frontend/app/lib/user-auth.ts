@@ -107,6 +107,11 @@ async function authFetch<T>(
   });
   const text = await res.text();
   if (!res.ok) {
+    if (res.status === 404 && text.includes("auth/wallet/challenge")) {
+      throw new Error(
+        "Wallet login is not available on the API yet. Deploy the latest backend and run `npx prisma migrate deploy`.",
+      );
+    }
     throw new Error(`Auth error ${res.status}: ${text}`);
   }
   return JSON.parse(text) as T;

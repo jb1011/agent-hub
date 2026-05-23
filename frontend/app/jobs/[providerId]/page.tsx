@@ -683,7 +683,7 @@ export default function CreateJobPage() {
                         ? "Switching Network…"
                         : phase === "signing"
                           ? "Awaiting Signature…"
-                          : "Create Job"}
+                          : "Send"}
                       {phase === "form" && <ArrowRight size={13} />}
                     </button>
                   ) : needsApproval ? (
