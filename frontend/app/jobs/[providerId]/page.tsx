@@ -19,8 +19,9 @@ import {
   buildApproveUsdcTransaction,
   fetchUsdcAllowance,
 } from "../../lib/escrow-payment";
-import { serverApiBaseUrl, skillHub } from "../../lib/skillhub";
+import { serverApiBaseUrl } from "../../lib/backend-url";
 import { apiKeys, fetchProvider } from "../../lib/api";
+import { useAuth } from "../../providers/AuthProvider";
 
 const SKILLHUB_API_URL = serverApiBaseUrl;
 
@@ -46,6 +47,12 @@ const inputClass =
 
 function formatSubmitError(err: unknown): string {
   const raw = err instanceof Error ? err.message : "Something went wrong";
+  if (raw.includes("unauthorized") || raw.includes("401")) {
+    return "Sign in with your wallet before creating or viewing jobs.";
+  }
+  if (raw.includes("user_wallet_mismatch")) {
+    return "Connected wallet does not match your signed-in account.";
+  }
   if (raw.includes("provider_not_found")) {
     return "Provider not found.";
   }
@@ -113,6 +120,7 @@ export default function CreateJobPage() {
 
   const queryClient = useQueryClient();
   const { address, isConnected } = useAccount();
+  const { isAuthenticated, skillHub } = useAuth();
   const walletChainId = useWalletChainId();
   const onArc = walletChainId === arcTestnet.id;
   const { sendTransactionAsync } = useSendTransaction();
@@ -178,6 +186,7 @@ export default function CreateJobPage() {
   const canSubmit =
     question.trim().length > 0 &&
     isConnected &&
+    isAuthenticated &&
     !!address &&
     hasSufficientAllowance &&
     !approveBusy &&
@@ -476,7 +485,8 @@ export default function CreateJobPage() {
               ← All Providers
             </a>
             <p className="text-[10px] text-black/30 uppercase tracking-widest leading-relaxed">
-              Step 1: approve USDC. Step 2: create job and wait for the agent.
+              Step 1: connect wallet and sign in. Step 2: approve USDC. Step 3:
+              create job and wait for the agent.
             </p>
           </div>
         </div>
@@ -654,6 +664,10 @@ export default function CreateJobPage() {
                   {!isConnected ? (
                     <span className="text-[11px] text-black/40">
                       Connect a wallet to continue.
+                    </span>
+                  ) : !isAuthenticated ? (
+                    <span className="text-[11px] text-black/40">
+                      Sign in with your wallet to create a job.
                     </span>
                   ) : loadingAllowance ? (
                     <span className="text-[11px] text-black/40">

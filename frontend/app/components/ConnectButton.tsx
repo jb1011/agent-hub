@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { arcTestnet } from "viem/chains";
-import { Wallet, Check, AlertTriangle, LogOut } from "lucide-react";
+import { Wallet, Check, AlertTriangle, LogOut, ShieldCheck, Loader2 } from "lucide-react";
 import { ensureArcTestnet } from "../lib/arc-wallet";
 import { useWalletChainId } from "../lib/useWalletChainId";
+import { useAuth } from "../providers/AuthProvider";
 
 function shortenAddress(addr: string) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -16,6 +17,7 @@ export function ConnectButton() {
   const { connectors, connect, isPending, error: connectError } = useConnect();
   const { disconnect } = useDisconnect();
   const walletChainId = useWalletChainId();
+  const { isAuthenticated, isSigningIn, authError, signIn, signOut } = useAuth();
   const [isSwitching, setIsSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
 
@@ -31,6 +33,21 @@ export function ConnectButton() {
     } finally {
       setIsSwitching(false);
     }
+  }
+
+  async function handleSignIn() {
+    try {
+      await signIn();
+    } catch {
+      // AuthProvider sets authError for display.
+    }
+  }
+
+  async function handleDisconnect() {
+    if (isAuthenticated) {
+      await signOut();
+    }
+    disconnect();
   }
 
   const metaMask =
@@ -100,9 +117,38 @@ export function ConnectButton() {
           </button>
         )}
 
+        {isAuthenticated ? (
+          <span
+            className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-1"
+            style={{ background: "#E85A00", color: "#fff" }}
+          >
+            <ShieldCheck size={10} />
+            Signed In
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void handleSignIn()}
+            disabled={isSigningIn}
+            className="btn-cyber disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isSigningIn ? (
+              <>
+                <Loader2 size={13} className="animate-spin" />
+                Signing In…
+              </>
+            ) : (
+              <>
+                <ShieldCheck size={13} />
+                Sign In
+              </>
+            )}
+          </button>
+        )}
+
         <button
           type="button"
-          onClick={() => disconnect()}
+          onClick={() => void handleDisconnect()}
           className="text-[10px] uppercase tracking-widest text-black/40 hover:text-black flex items-center gap-1"
         >
           <LogOut size={11} />
@@ -112,6 +158,16 @@ export function ConnectButton() {
       {switchError && (
         <span className="text-[11px] text-red-600 font-medium">
           {switchError}
+        </span>
+      )}
+      {authError && (
+        <span className="text-[11px] text-red-600 font-medium break-words">
+          {authError}
+        </span>
+      )}
+      {isConnected && !isAuthenticated && !isSigningIn && (
+        <span className="text-[10px] text-black/45 uppercase tracking-widest">
+          Sign in with your wallet to create and view jobs.
         </span>
       )}
     </div>
