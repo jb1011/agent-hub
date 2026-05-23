@@ -9,6 +9,10 @@ export type InvokeProviderChatBody = {
   message: string;
   job_request_id: string;
   skillhub_api_url: string;
+  /** Provider API request_id — lets the agent skip user-authenticated GET /jobs. */
+  provider_request_id?: string;
+  /** On-chain job id once funded — passed to the agent for start-job verification. */
+  job_id?: string;
 };
 
 export type InvokeProviderChatResult = {

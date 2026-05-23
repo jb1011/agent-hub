@@ -14,12 +14,16 @@ export async function POST(req: NextRequest) {
       api_base_url?: string;
       message?: string;
       job_request_id?: string;
+      job_id?: string;
+      provider_request_id?: string;
       skillhub_api_url?: string;
     };
 
     const apiBaseUrl = body.api_base_url?.trim();
     const message = body.message?.trim();
     const jobRequestId = body.job_request_id?.trim();
+    const jobId = body.job_id?.trim();
+    const providerRequestId = body.provider_request_id?.trim();
     const skillhubApiUrl = body.skillhub_api_url?.trim();
 
     if (!apiBaseUrl || !message || !jobRequestId || !skillhubApiUrl) {
@@ -34,6 +38,8 @@ export async function POST(req: NextRequest) {
       message,
       job_request_id: jobRequestId,
       skillhub_api_url: skillhubApiUrl,
+      ...(jobId ? { job_id: jobId } : {}),
+      ...(providerRequestId ? { provider_request_id: providerRequestId } : {}),
     };
 
     const upstream = await fetch(url, {

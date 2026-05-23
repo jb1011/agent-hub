@@ -6,7 +6,8 @@
  *   SIGNER_WALLET_PK=0x...   (provider signer_wallet)
  *
  * Body from Skill Hub UI (via Next proxy):
- *   { "message": "...", "job_request_id": "0x...", "skillhub_api_url": "..." }
+ *   { "message": "...", "job_request_id": "0x...", "skillhub_api_url": "...",
+ *     "provider_request_id": "0x...", "job_id": "123" }
  *
  * Plain chat (no job): { "message": "..." }
  */
@@ -90,18 +91,24 @@ async function signStartJob(typedData, privateKey) {
   );
 }
 
-async function runSkillHubJob(jobRequestId, message, runChat) {
+async function runSkillHubJob(jobRequestId, message, runChat, options = {}) {
   if (!SIGNER_WALLET_PK) {
     throw new Error("SIGNER_WALLET_PK not set — cannot start Skill Hub job");
   }
 
-  const encodedJobId = encodeURIComponent(jobRequestId);
-  const job = await skillhubFetch(`/jobs/${encodedJobId}`);
-  const providerId = job.provider?.request_id;
+  let providerId = options.providerRequestId;
+  let onchainJobId = options.jobId;
+
+  if (!providerId || !onchainJobId) {
+    const job = await skillhubFetch(`/jobs/${encodeURIComponent(jobRequestId)}`);
+    providerId = providerId ?? job.provider?.request_id;
+    onchainJobId = onchainJobId ?? job.job_id;
+  }
+
   if (!providerId) {
     throw new Error(`Skill Hub job ${jobRequestId} response missing provider.request_id`);
   }
-  if (!job.job_id) {
+  if (!onchainJobId) {
     throw new Error(`Skill Hub job ${jobRequestId} is not funded on-chain yet`);
   }
 
@@ -114,9 +121,9 @@ async function runSkillHubJob(jobRequestId, message, runChat) {
   if (!selectedJobId) {
     throw new Error("Skill Hub start-next-job-request response missing start_job_args.job_id");
   }
-  if (String(job.job_id) !== String(selectedJobId)) {
+  if (String(onchainJobId) !== String(selectedJobId)) {
     throw new Error(
-      `Skill Hub selected next job ${selectedJobId}, but chat requested ${job.job_id}`
+      `Skill Hub selected next job ${selectedJobId}, but chat requested ${onchainJobId}`,
     );
   }
 
@@ -163,7 +170,10 @@ async function handleChatWithSkillHub(body, runChat) {
   if (body.skillhub_api_url && SKILLHUB_API_URL !== body.skillhub_api_url.replace(/\/$/, "")) {
     console.warn("[skillhub] skillhub_api_url mismatch; using SKILLHUB_API_URL env");
   }
-  return runSkillHubJob(jobId, body.message, runChat);
+  return runSkillHubJob(jobId, body.message, runChat, {
+    providerRequestId: body.provider_request_id,
+    jobId: body.job_id,
+  });
 }
 
 module.exports = { handleChatWithSkillHub, runSkillHubJob };

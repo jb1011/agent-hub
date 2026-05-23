@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Zap, ExternalLink, Loader2 } from "lucide-react";
@@ -19,11 +19,8 @@ import {
   buildApproveUsdcTransaction,
   fetchUsdcAllowance,
 } from "../../lib/escrow-payment";
-import { serverApiBaseUrl } from "../../lib/backend-url";
 import { apiKeys, fetchProvider } from "../../lib/api";
 import { useAuth } from "../../providers/AuthProvider";
-
-const SKILLHUB_API_URL = serverApiBaseUrl;
 
 const GRID = "rgba(0,0,0,0.12)";
 
@@ -72,6 +69,23 @@ function formatSubmitError(err: unknown): string {
     return "You rejected the MetaMask prompt.";
   }
   return raw;
+}
+
+function waitingDetailForPhase(phase: Phase, job?: JobWithDetails): string {
+  if (phase === "waiting_funded") {
+    return "Waiting for your createJob transaction to be indexed and linked to an on-chain job_id…";
+  }
+
+  switch (job?.status) {
+    case "FUNDED":
+      return "Job is funded. Waiting for the provider SDK worker to start it (start-next-job-request → start-job → job-finish)…";
+    case "RUNNING":
+      return "Provider is processing your job…";
+    case "SUBMITTED":
+      return "Output submitted — loading result…";
+    default:
+      return `Waiting for provider output (status: ${job?.status ?? "…"})…`;
+  }
 }
 
 function LoadingPanel({
@@ -132,8 +146,6 @@ export default function CreateJobPage() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [approveTxHash, setApproveTxHash] = useState<string | null>(null);
   const [jobRequestId, setJobRequestId] = useState<string | null>(null);
-  const [invokeError, setInvokeError] = useState<string | null>(null);
-  const invokedForJobRef = useRef<string | null>(null);
 
   const {
     data: provider,
@@ -260,60 +272,13 @@ export default function CreateJobPage() {
     }
   }, [job, phase, isPolling]);
 
-  // useEffect(() => {
-  //   if (
-  //     phase !== "waiting_output" ||
-  //     !job?.job_id ||
-  //     !jobRequestId ||
-  //     !provider?.api_base_url
-  //   ) {
-  //     return;
-  //   }
-  //   if (invokedForJobRef.current === jobRequestId) return;
-  //   invokedForJobRef.current = jobRequestId;
-
-  //   const message = question.trim();
-  //   const apiBaseUrl = provider.api_base_url;
-
-  //   (async () => {
-  //     setInvokeError(null);
-  //     try {
-  //       //HERE
-  //       const res = await fetch("/api/invoke-provider", {
-  //         method: "POST",
-  //         headers: { "Content-Type": "application/json" },
-  //         body: JSON.stringify({
-  //           api_base_url: apiBaseUrl,
-  //           message,
-  //           job_request_id: jobRequestId,
-  //           skillhub_api_url: SKILLHUB_API_URL,
-  //         }),
-  //       });
-  //       const data = (await res.json()) as { ok?: boolean; error?: string };
-  //       console.log("data!!", data);
-  //       if (!res.ok || !data.ok) {
-  //         setInvokeError(
-  //           data.error ??
-  //             "Could not reach your agent API. Check api_base_url and that /chat accepts Skill Hub job payloads.",
-  //         );
-  //       }
-  //     } catch (err) {
-  //       setInvokeError(
-  //         err instanceof Error ? err.message : "Failed to invoke provider API",
-  //       );
-  //     }
-  //   })();
-  // }, [phase, job?.job_id, jobRequestId, provider?.api_base_url, question]);
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit || !address || !provider?.registry_provider_id) return;
 
     setErrorMsg("");
-    setInvokeError(null);
     setTxHash(null);
     setJobRequestId(null);
-    invokedForJobRef.current = null;
 
     try {
       const trimmed = question.trim();
@@ -372,12 +337,7 @@ export default function CreateJobPage() {
 
   const waitingTitle =
     phase === "waiting_funded" ? "Funding Job" : "Agent Working";
-  const waitingDetail =
-    phase === "waiting_funded"
-      ? "Waiting for your createJob transaction to be indexed and linked to an on-chain job_id…"
-      : invokeError
-        ? `Calling your agent at ${provider?.api_base_url ?? "api_base_url"}… (${invokeError}) Still waiting for on-chain output.`
-        : "Your job is funded — calling your agent API, then waiting for Skill Hub output…";
+  const waitingDetail = waitingDetailForPhase(phase, job);
 
   return (
     <div
@@ -440,11 +400,11 @@ export default function CreateJobPage() {
                   {provider.name}
                 </h1>
                 <p className="text-sm text-black/60 leading-relaxed max-w-xs mb-4">
-                  Submit a question. You fund the job on Arc Testnet; once
-                  funded, this page calls your registered{" "}
-                  <span className="font-mono">api_base_url</span>/chat with the
-                  job id so your agent can run and post{" "}
-                  <span className="font-mono">output</span> to Skill Hub.
+                  Submit a question and fund the job on Arc Testnet. Your
+                  provider&apos;s SDK worker picks up funded jobs, runs{" "}
+                  <span className="font-mono">start-job</span>, and posts{" "}
+                  <span className="font-mono">output</span> via{" "}
+                  <span className="font-mono">job-finish</span>.
                 </p>
                 <div className="text-[10px] uppercase tracking-widest text-black/35 space-y-1">
                   <div className="font-mono break-all">
