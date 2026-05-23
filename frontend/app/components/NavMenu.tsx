@@ -9,9 +9,9 @@ const GRID = "rgba(0,0,0,0.12)";
 const navLinks = [
   { label: "Agents", href: "/agents" },
   { label: "Register", href: "/register" },
-  { label: "My Providers", href: "/my-providers" },
   { label: "Feedback", href: "/feedback" },
   { label: "FAQ", href: "/faq" },
+  { label: "My Providers", href: "/my-providers" },
   { label: "My History", href: "/history" },
   // { label: "Twitter", href: "/twitter" },
 ];
