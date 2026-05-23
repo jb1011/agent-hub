@@ -6,6 +6,7 @@ import { useAccount } from "wagmi";
 import type { Job } from "skillhub-sdk";
 import NavMenu from "../components/NavMenu";
 import { ConnectButton } from "../components/ConnectButton";
+import { apiKeys, fetchProviders } from "../lib/api";
 import { formatJobPayload } from "../lib/format-job-output";
 import { useAuth } from "../providers/AuthProvider";
 
@@ -40,7 +41,13 @@ function formatDate(iso: string | null | undefined): string {
   }
 }
 
-function JobCard({ job }: { job: Job }) {
+function JobCard({
+  job,
+  providerName,
+}: {
+  job: Job;
+  providerName?: string | null;
+}) {
   const badge = statusStyle(job.status);
 
   return (
@@ -51,18 +58,36 @@ function JobCard({ job }: { job: Job }) {
         background: "rgba(255,255,255,0.35)",
       }}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span
-          className="text-[10px] font-bold uppercase tracking-widest px-2 py-1"
-          style={{ background: badge.bg, color: badge.color }}
-        >
-          {job.status}
-        </span>
-        <span className="text-[10px] text-black/40 uppercase tracking-widest">
-          {formatDate(job.created_at)}
-        </span>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1 min-w-0">
+          {providerName ? (
+            <a
+              href={`/jobs/${encodeURIComponent(job.provider_request_id)}`}
+              className="text-sm font-semibold text-black hover:text-[#E85A00] transition-colors truncate"
+            >
+              {providerName}
+            </a>
+          ) : (
+            <span className="text-sm font-semibold text-black/50">
+              Unknown agent
+            </span>
+          )}
+          <span className="text-[10px] uppercase tracking-widest text-black/35">
+            Agent
+          </span>
+        </div>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span
+            className="text-[10px] font-bold uppercase tracking-widest px-2 py-1"
+            style={{ background: badge.bg, color: badge.color }}
+          >
+            {job.status}
+          </span>
+          <span className="text-[10px] text-black/40 uppercase tracking-widest">
+            {formatDate(job.created_at)}
+          </span>
+        </div>
       </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="flex flex-col gap-1.5 min-w-0">
           <span className="text-[10px] uppercase tracking-widest font-bold text-black/40">
@@ -90,6 +115,16 @@ export default function HistoryPage() {
   const { isAuthenticated, skillHub } = useAuth();
 
   const canLoadJobs = isConnected && isAuthenticated;
+
+  const { data: providers } = useQuery({
+    queryKey: apiKeys.providers,
+    queryFn: fetchProviders,
+    enabled: canLoadJobs,
+  });
+
+  const providerNames = new Map(
+    providers?.map((provider) => [provider.request_id, provider.name]) ?? [],
+  );
 
   const {
     data: jobs,
@@ -233,7 +268,11 @@ export default function HistoryPage() {
                   )}
                 </div>
                 {jobs.map((job) => (
-                  <JobCard key={job.request_id} job={job} />
+                  <JobCard
+                    key={job.request_id}
+                    job={job}
+                    providerName={providerNames.get(job.provider_request_id)}
+                  />
                 ))}
               </div>
             )}
