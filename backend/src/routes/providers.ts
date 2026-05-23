@@ -4,13 +4,14 @@ import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { serializeProvider } from "../lib/serialize.js";
-import { notFound, sendZodError } from "../lib/http-errors.js";
+import { forbidden, notFound, sendZodError } from "../lib/http-errors.js";
 import { isBytes32 } from "../lib/create-job-authorization.js";
 import { uint256StringSchema } from "../lib/uint256.js";
 import { generateBytes32Id } from "../lib/bytes32-id.js";
 import { agentHubRegistryAddress, buildRegisterProviderCall } from "../lib/registry-call.js";
 import { RegisterProviderAuthorizationError } from "../lib/register-provider-authorization.js";
 import { syncProviderRegisteredFromTransaction } from "../listeners/registry-provider-registered.js";
+import { requireUserAuth } from "../lib/auth.js";
 
 const evmAddressSchema = (fieldName: string) =>
   z.string().refine(isAddress, `${fieldName}_must_be_evm_address`);
@@ -106,6 +107,10 @@ async function generateUniqueProviderRequestId(): Promise<string> {
   }
 
   throw new Error("failed_to_generate_request_id");
+}
+
+function sameWallet(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase();
 }
 
 export async function providersRoutes(app: FastifyInstance) {
@@ -208,6 +213,7 @@ export async function providersRoutes(app: FastifyInstance) {
   });
 
   app.patch<{ Params: { id: string } }>("/providers/:id", {
+    preHandler: requireUserAuth,
     schema: {
       tags: ["Providers"],
       summary: "Update a provider",
@@ -216,7 +222,11 @@ export async function providersRoutes(app: FastifyInstance) {
       response: {
         200: providerResponseSchema,
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
+        409: z.object({ error: z.string() }),
+        500: z.object({ error: z.string() }),
       },
     },
   }, async (req, reply) => {
@@ -229,6 +239,10 @@ export async function providersRoutes(app: FastifyInstance) {
       where: { request_id: params.data.id },
     });
     if (!existing) return notFound(reply);
+    if (!req.user) return reply.status(401).send({ error: "unauthorized" });
+    if (!sameWallet(existing.owner_wallet, req.user.walletAddress)) {
+      return forbidden(reply, "provider_owner_wallet_mismatch");
+    }
     if (parsed.data.status === "ACTIVE") {
       const registryProviderId =
         parsed.data.registry_provider_id ?? existing.registry_provider_id;

@@ -38,7 +38,7 @@ export class ProvidersResource {
   }
 
   /**
-   * Update an existing provider (partial update).
+   * Update an existing provider as its authenticated owner (partial update).
    * PATCH /providers/:id
    */
   update(providerId: string, input: UpdateProviderInput): Promise<Provider> {

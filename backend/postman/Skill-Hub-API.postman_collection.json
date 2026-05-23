@@ -22,7 +22,10 @@
     { "key": "accessToken", "value": "" },
     { "key": "accessTokenExpiresIn", "value": "" },
     { "key": "providerId", "value": "1" },
+    { "key": "providerRequestId", "value": "" },
     { "key": "jobId", "value": "" },
+    { "key": "jobRequestId", "value": "0x3333333333333333333333333333333333333333333333333333333333333333" },
+    { "key": "syncTxHash", "value": "0x0000000000000000000000000000000000000000000000000000000000000000" },
     { "key": "inputCommitment", "value": "0x1111111111111111111111111111111111111111111111111111111111111111" },
     { "key": "outputCommitment", "value": "0x2222222222222222222222222222222222222222222222222222222222222222" },
     { "key": "signatureExpiresAt", "value": "1893456000" },
@@ -43,7 +46,7 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "const providerAuthRoutes = [\"/start-next-job-request\", \"/start-job\", \"/job-finish\"];",
+          "const providerAuthRoutes = [\"/start-next-job-request\", \"/start-job\", \"/job-finish\", \"/provider-cancel\"];",
           "const requestUrl = pm.variables.replaceIn(pm.request.url.toString());",
           "const pathname = requestUrl.split(\"?\")[0];",
           "const isProviderAuthRoute = providerAuthRoutes.some((suffix) => pathname.endsWith(suffix));",
@@ -275,8 +278,8 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/providers/{{providerId}}",
-            "description": "Set `providerId` in the collection variables."
+            "url": "{{baseUrl}}/providers/{{providerRequestId}}",
+            "description": "Set `providerRequestId` to the backend bytes32 request_id. `providerId` is reserved for the on-chain uint256 provider id used by job creation/provider auth."
           }
         },
         {
@@ -286,21 +289,53 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Demo Provider\",\n  \"description\": \"Optional description\",\n  \"owner_wallet\": \"0x0000000000000000000000000000000000000001\",\n  \"payout_wallet\": \"0x0000000000000000000000000000000000000002\",\n  \"api_base_url\": \"https://api.example.com\",\n  \"trust_level\": \"VERIFIED\",\n  \"service_type\": \"AI\",\n  \"input_schema\": { \"type\": \"object\" },\n  \"output_schema\": { \"type\": \"object\" },\n  \"price_usdc\": 1.5,\n  \"max_concurrent_jobs\": 2,\n  \"timeout_seconds\": 300\n}"
+              "raw": "{\n  \"name\": \"Demo Provider\",\n  \"description\": \"Optional description\",\n  \"owner_wallet\": \"{{authWalletAddress}}\",\n  \"signer_wallet\": \"{{authWalletAddress}}\",\n  \"payout_wallet\": \"{{authWalletAddress}}\",\n  \"api_base_url\": \"https://api.example.com\",\n  \"service_type\": \"AI\",\n  \"input_schema\": { \"type\": \"object\" },\n  \"output_schema\": { \"type\": \"object\" },\n  \"price_usdc\": 1.5,\n  \"max_concurrent_jobs\": 2,\n  \"timeout_seconds\": 300\n}"
             },
-            "url": "{{baseUrl}}/providers"
-          }
+            "url": "{{baseUrl}}/providers",
+            "description": "Creates a provider owned by `authWalletAddress`, so the same authenticated user can update it afterward."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set(\"providerRequestId\", body.request_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Update provider",
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Updated name\",\n  \"status\": \"ACTIVE\"\n}"
             },
-            "url": "{{baseUrl}}/providers/{{providerId}}"
+            "url": "{{baseUrl}}/providers/{{providerRequestId}}",
+            "description": "Protected route. The authenticated wallet must match the provider `owner_wallet`."
+          }
+        },
+        {
+          "name": "Sync provider registration",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tx_hash\": \"{{syncTxHash}}\"\n}"
+            },
+            "url": "{{baseUrl}}/providers/{{providerRequestId}}/sync-registration",
+            "description": "Force-syncs a provider from a `ProviderRegistered` transaction receipt when the listener missed the event. Requires `providerRequestId` and `syncTxHash`."
           }
         },
         {
@@ -308,7 +343,7 @@
           "request": {
             "method": "DELETE",
             "header": [],
-            "url": "{{baseUrl}}/providers/{{providerId}}"
+            "url": "{{baseUrl}}/providers/{{providerRequestId}}"
           }
         }
       ]
@@ -320,16 +355,16 @@
           "name": "List jobs",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": "{{baseUrl}}/jobs",
-            "description": "Optional query parameters: ?user_wallet=&provider_request_id=&status=."
+            "description": "Protected route. Optional query parameters: ?request_id=&job_id=&user_wallet=&provider_request_id=&status=."
           }
         },
         {
           "name": "Get job",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": "{{baseUrl}}/jobs/{{jobId}}"
           }
         },
@@ -337,13 +372,47 @@
           "name": "Create job",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"user_wallet\": \"0x00000000000000000000000000000000000000aa\",\n  \"provider_id\": \"{{providerId}}\",\n  \"input\": { \"prompt\": \"Do a poem about the weather\" },\n  \"input_commitment\": \"{{inputCommitment}}\",\n  \"queue_timeout_seconds\": 3600,\n  \"authorization_expires_in_seconds\": 3600\n}"
+              "raw": "{\n  \"request_id\": \"{{jobRequestId}}\",\n  \"user_wallet\": \"{{authWalletAddress}}\",\n  \"provider_id\": \"{{providerId}}\",\n  \"input\": { \"prompt\": \"Do a poem about the weather\" },\n  \"input_commitment\": \"{{inputCommitment}}\",\n  \"queue_timeout_seconds\": 3600,\n  \"authorization_expires_in_seconds\": 3600\n}"
             },
-            "url": "{{baseUrl}}/jobs"
+            "url": "{{baseUrl}}/jobs",
+            "description": "Protected route. `provider_id` is the on-chain uint256 provider id. `request_id` is optional, but this sample sets it so the follow-up sync endpoint can target the local job request."
           }
+        },
+        {
+          "name": "Sync job funding",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tx_hash\": \"{{syncTxHash}}\"\n}"
+            },
+            "url": "{{baseUrl}}/jobs/{{jobRequestId}}/sync-funding",
+            "description": "Force-syncs a local job from a `JobCreated` transaction receipt when the listener missed the event. Requires the authenticated user to own the job."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.job_id) pm.collectionVariables.set(\"jobId\", body.job_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Start next job request",
@@ -431,7 +500,10 @@
           "name": "Acceptance request",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"output_commitment\": \"{{outputCommitment}}\",\n  \"expires_at\": {{signatureExpiresAt}}\n}"
@@ -444,7 +516,10 @@
           "name": "Acceptance",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"output_commitment\": \"{{outputCommitment}}\",\n  \"expires_at\": {{signatureExpiresAt}},\n  \"user_signature\": \"{{userSignature}}\"\n}"
@@ -454,10 +529,32 @@
           }
         },
         {
+          "name": "Provider cancel job",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Provider-Id", "value": "{{providerId}}" },
+              { "key": "X-Provider-Address", "value": "{{providerAddress}}" },
+              { "key": "X-Timestamp", "value": "{{providerRequestTimestamp}}" },
+              { "key": "X-Body-Hash", "value": "{{providerRequestBodyHash}}" },
+              { "key": "X-Signature", "value": "{{providerRequestSignature}}" },
+              { "key": "X-Nonce", "value": "{{providerRequestNonce}}" },
+              { "key": "X-Query-Hash", "value": "{{providerRequestQueryHash}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"error_message\": \"provider_failed\",\n  \"expires_in_seconds\": 3600\n}"
+            },
+            "url": "{{baseUrl}}/jobs/{{jobId}}/provider-cancel",
+            "description": "Called by the provider when a running job failed. The backend signs a NoDeliveryAttestation, relays `refundWithNoDeliveryAttestation`, marks the job and escrow as refunded, and frees provider capacity immediately."
+          }
+        },
+        {
           "name": "Refund after queue timeout args",
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": "{{baseUrl}}/jobs/{{jobId}}/refund-after-queue-timeout",
             "description": "Returns the arguments for `refundAfterQueueTimeout` after the queue deadline has expired."
           }
@@ -466,7 +563,7 @@
           "name": "Refund after final timeout args",
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": "{{baseUrl}}/jobs/{{jobId}}/refund-after-final-timeout",
             "description": "Returns the arguments for `refundAfterFinalTimeout` after the final refund deadline has expired."
           }
