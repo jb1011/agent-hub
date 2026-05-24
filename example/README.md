@@ -38,7 +38,10 @@ npm run jobs:list --prefix example -- FUNDED
 npm run register:provider --prefix example
 npm run update:provider --prefix example
 npm run create:job --prefix example
+npm run sync:funding --prefix example
 npm run start:job --prefix example
+npm run start:cancel --prefix example
+npm run provider:cancel --prefix example
 npm run accept:job --prefix example
 npm run refund:queue --prefix example -- <jobId>
 npm run refund:final --prefix example -- <jobId>
@@ -98,7 +101,9 @@ Registration payloads live in:
 example/config/provider.json
 example/config/provider-update.json
 example/config/job.json
+example/config/sync-funding.json
 example/config/start-job.json
+example/config/provider-cancel.json
 example/config/acceptance.json
 ```
 
@@ -195,6 +200,22 @@ If `SIGNER_WALLET_PK` and `RPC_URL` are set, the script:
 
 Otherwise, it only prints the prepared transaction (remember to approve the payment token manually before sending `createJob`).
 
+## Sync job funding
+
+`scripts/sync-funding.ts` reads `example/config/sync-funding.json` and calls:
+
+```ts
+const synced = await signedUserClient.jobs.syncFunding(job_id, { tx_hash });
+```
+
+You can override the config values from the command line:
+
+```bash
+npm run sync:funding --prefix example -- <jobId> <txHash>
+```
+
+This endpoint uses wallet auth, so `SIGNER_WALLET_PK` must match the job `user_wallet`.
+
 ## Start a job
 
 `scripts/start-job.ts` reads `example/config/start-job.json`. The recommended config is provider-scoped:
@@ -238,6 +259,35 @@ const finished = await signedClient.jobs.finishJob(job_id, {
 In the script, these provider SDK calls are made with `providerClient(provider_id)`, which enables SDK `providerAuth` and automatically sends `X-Provider-Id`, `X-Provider-Address`, `X-Timestamp`, `X-Body-Hash`, `X-Signature`, `X-Nonce`, and `X-Query-Hash`.
 
 The `startJob` call returns `input` with relayed transaction metadata (`transaction_hash`, `relayer_address`, `block_number`, `gas_used`). The script then runs a trivial compute (`1 + 1`) and calls `job-finish` with `output`. `SIGNER_WALLET_PK` must match the `signer_wallet` registered for the provider.
+
+## Provider cancel
+
+`scripts/provider-cancel.ts` reads `example/config/provider-cancel.json` and calls:
+
+```ts
+const signedClient = providerClient(provider_id);
+const cancelled = await signedClient.jobs.providerCancel(job_id, {
+  error_message,
+  expires_in_seconds,
+});
+```
+
+You can override the job and provider ids from the command line:
+
+```bash
+npm run provider:cancel --prefix example -- <jobId> <providerRequestId>
+```
+
+`provider_id` is the API provider `request_id` (`bytes32`). `SIGNER_WALLET_PK` must match the registered provider `signer_wallet`, because the SDK signs the provider auth headers for `/provider-cancel`.
+
+To start a funded job and immediately cancel it, use the combined script:
+
+```bash
+npm run start:cancel --prefix example -- <jobId> <providerRequestId>
+```
+
+It reads the same `example/config/provider-cancel.json`, calls `start-next-job-request`, signs and submits `start-job`, then calls `provider-cancel` for the selected job.
+If the job is cancelled before `work_deadline`, the API marks it failed immediately and defers the on-chain refund until the no-delivery refund is valid on the escrow contract.
 
 ## Accept a job
 
