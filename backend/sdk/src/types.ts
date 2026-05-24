@@ -237,6 +237,9 @@ export interface StartJobResult {
   relayer_address: string;
   block_number: number | null;
   gas_used: string | null;
+  started_at: number | null;
+  work_deadline: number | null;
+  final_refund_deadline: number | null;
 }
 
 export interface ProviderCancelInput extends AuthorizationExpiryInput {
@@ -296,9 +299,10 @@ export interface StoredNoDeliveryAttestation {
 }
 
 export interface ProviderCancelResult extends Job {
-  refund_with_no_delivery_attestation_args: RefundWithNoDeliveryAttestationArgs;
-  transaction_hash: string;
-  relayer_address: string;
+  refund_with_no_delivery_attestation_args: RefundWithNoDeliveryAttestationArgs | null;
+  refund_deferred_until: string | null;
+  transaction_hash: string | null;
+  relayer_address: string | null;
   block_number: number | null;
   gas_used: string | null;
   refund_amount: string | null;

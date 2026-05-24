@@ -481,31 +481,48 @@ async function issueNoDeliveryAttestation(
   job: NonNullable<Awaited<ReturnType<typeof getJobWithProvider>>>,
   checkedAt = Math.floor(Date.now() / 1000)
 ) {
-  if (job.status !== JobStatus.RUNNING || job.delivered_at || !job.work_deadline) return null;
+  if (!isStatus(job.status, [JobStatus.RUNNING, JobStatus.FAILED]) || job.delivered_at || !job.work_deadline) {
+    return null;
+  }
   if (checkedAt <= unixSeconds(job.work_deadline)) return null;
 
   const attestation = await signNoDeliveryAttestation({
     ...ensureOnchainJob(job),
     checkedAt,
   });
+  const relayed = await relayRefundWithNoDeliveryAttestation({
+    jobId: attestation.refund_with_no_delivery_attestation_args.job_id,
+    checkedAt: attestation.refund_with_no_delivery_attestation_args.checked_at,
+    expiresAt: attestation.refund_with_no_delivery_attestation_args.expires_at,
+    noDeliveryAttesterSignature:
+      attestation.refund_with_no_delivery_attestation_args.no_delivery_attester_signature,
+  });
   const attestationRecord = buildNoDeliveryAttestationRecord(attestation);
   const checkedAtDate = dateFromUnixSeconds(attestation.checked_at);
   const updated = await prisma.job.updateMany({
     where: {
       request_id: job.request_id,
-      status: JobStatus.RUNNING,
+      status: { in: [JobStatus.RUNNING, JobStatus.FAILED] },
       delivered_at: null,
       work_deadline: { lt: checkedAtDate },
     },
     data: {
-      status: JobStatus.FAILED,
-      error_message: "no_delivery_attested",
+      status: JobStatus.REFUNDED,
+      error_message: job.error_message ?? "no_delivery_attested",
       no_delivery_attestation: attestationRecord as Prisma.InputJsonValue,
       no_delivery_attested_at: checkedAtDate,
     },
   });
 
   if (updated.count === 0) return null;
+
+  await prisma.escrow.updateMany({
+    where: { request_id: job.request_id, escrow_status: { in: ["LOCKED", "DISPUTED"] } },
+    data: {
+      escrow_status: "REFUNDED",
+      refund_tx_hash: relayed.transaction_hash,
+    },
+  });
 
   const updatedJob = await prisma.job.findUniqueOrThrow({
     where: { request_id: job.request_id },
@@ -514,13 +531,18 @@ async function issueNoDeliveryAttestation(
   return {
     job: updatedJob,
     refund_with_no_delivery_attestation_args: attestation.refund_with_no_delivery_attestation_args,
+    transaction_hash: relayed.transaction_hash,
+    relayer_address: relayed.relayer_address,
+    block_number: relayed.block_number,
+    gas_used: relayed.gas_used,
+    refund_amount: relayed.amount,
   };
 }
 
 export async function emitExpiredNoDeliveryAttestations(logger?: FastifyBaseLogger) {
   const expiredJobs = await prisma.job.findMany({
     where: {
-      status: JobStatus.RUNNING,
+      status: { in: [JobStatus.RUNNING, JobStatus.FAILED] },
       delivered_at: null,
       work_deadline: { lt: new Date() },
     },
@@ -540,7 +562,7 @@ export async function emitExpiredNoDeliveryAttestations(logger?: FastifyBaseLogg
   }
 
   if (emitted > 0) {
-    logger?.info({ emitted }, "Expired running jobs received NoDeliveryAttestations");
+    logger?.info({ emitted }, "Expired running jobs were refunded with NoDeliveryAttestations");
   }
 
   return { scanned: expiredJobs.length, emitted };
@@ -884,20 +906,31 @@ export async function jobsRoutes(app: FastifyInstance) {
     if (!parsed.success) return sendZodError(reply, parsed.error);
 
     const job = await getJobWithProvider(req.params.id);
-    if (!job) return notFound(reply);
-    if (ensureUserOwnsJob(req, reply, job) !== true) return;
+    if (job && ensureUserOwnsJob(req, reply, job) !== true) return;
 
     try {
       const syncedEvents = await syncJobCreatedFromTransaction(parsed.data.tx_hash, req.log);
-      const matched = syncedEvents.some((event) =>
-        event.request_id.toLowerCase() === job.request_id.toLowerCase() ||
-        event.job_id === job.job_id
+      const matchedEvent = syncedEvents.find((event) =>
+        event.request_id.toLowerCase() === req.params.id.toLowerCase() ||
+        event.job_id === req.params.id ||
+        (job
+          ? event.request_id.toLowerCase() === job.request_id.toLowerCase() ||
+            event.job_id === job.job_id
+          : false)
       );
-      if (!matched) return conflict(reply, "job_created_event_does_not_match_job");
+      if (!matchedEvent) return conflict(reply, "job_created_event_does_not_match_job");
 
-      const updated = await prisma.job.findUniqueOrThrow({
-        where: { request_id: job.request_id },
+      const updated = await prisma.job.findFirst({
+        where: {
+          OR: [
+            { request_id: matchedEvent.request_id },
+            { job_id: matchedEvent.job_id },
+          ],
+        },
       });
+      if (!updated) return notFound(reply);
+      if (ensureUserOwnsJob(req, reply, updated) !== true) return;
+
       return reply.send({
         ...serializeJob(updated),
         synced_events: syncedEvents,
@@ -976,6 +1009,9 @@ export async function jobsRoutes(app: FastifyInstance) {
           relayer_address: z.string(),
           block_number: z.number().nullable(),
           gas_used: z.string().nullable(),
+          started_at: z.number().nullable(),
+          work_deadline: z.number().nullable(),
+          final_refund_deadline: z.number().nullable(),
         }),
         400: z.object({ error: z.string(), details: z.unknown().optional() }),
         401: z.object({ error: z.string() }),
@@ -1028,6 +1064,9 @@ export async function jobsRoutes(app: FastifyInstance) {
         relayer_address: relayed.relayer_address,
         block_number: relayed.block_number,
         gas_used: relayed.gas_used,
+        started_at: relayed.started_at,
+        work_deadline: relayed.work_deadline,
+        final_refund_deadline: relayed.final_refund_deadline,
       };
       logProviderJobPayload(req.log, "start_job_response", {
         request_id: job!.request_id,
@@ -1156,7 +1195,7 @@ export async function jobsRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>("/jobs/:id/provider-cancel", {
     schema: {
       tags: ["Jobs"],
-      summary: "Cancel a running job as the provider and relay an immediate user refund",
+      summary: "Cancel a running job as the provider; relay refund when the contract allows it",
       params: idParamsSchema,
       body: providerCancelSchema,
       response: {
@@ -1166,9 +1205,10 @@ export async function jobsRoutes(app: FastifyInstance) {
             checked_at: z.number(),
             expires_at: z.number(),
             no_delivery_attester_signature: z.string(),
-          }),
-          transaction_hash: z.string(),
-          relayer_address: z.string(),
+          }).nullable(),
+          refund_deferred_until: z.string().nullable(),
+          transaction_hash: z.string().nullable(),
+          relayer_address: z.string().nullable(),
           block_number: z.number().nullable(),
           gas_used: z.string().nullable(),
           refund_amount: z.string().nullable(),
@@ -1189,12 +1229,57 @@ export async function jobsRoutes(app: FastifyInstance) {
     if (!job) return notFound(reply);
     const auth = await verifyProviderRequestHeaders(req, reply, job.provider);
     if (!auth.ok) return auth.reply;
-    if (job.status !== JobStatus.RUNNING) {
+    if (!isStatus(job.status, [JobStatus.RUNNING, JobStatus.FAILED])) {
       return conflict(reply, `job_not_running_status_${job.status}`);
     }
     if (job.delivered_at) return conflict(reply, "job_already_delivered");
 
+    if (job.status === JobStatus.FAILED) {
+      if (job.error_message !== (parsed.data.error_message ?? "provider_cancelled")) {
+        return conflict(reply, `job_not_running_status_${job.status}`);
+      }
+      if (!job.work_deadline || Date.now() <= job.work_deadline.getTime()) {
+        return reply.send({
+          ...serializeJob(job),
+          refund_with_no_delivery_attestation_args: null,
+          refund_deferred_until: job.work_deadline ? job.work_deadline.toISOString() : null,
+          transaction_hash: null,
+          relayer_address: null,
+          block_number: null,
+          gas_used: null,
+          refund_amount: null,
+        });
+      }
+    }
+
     try {
+      if (job.work_deadline && Date.now() <= job.work_deadline.getTime()) {
+        await prisma.job.updateMany({
+          where: {
+            request_id: job.request_id,
+            status: JobStatus.RUNNING,
+            delivered_at: null,
+          },
+          data: {
+            status: JobStatus.FAILED,
+            error_message: parsed.data.error_message ?? "provider_cancelled",
+          },
+        });
+        const updated = await prisma.job.findUniqueOrThrow({
+          where: { request_id: job.request_id },
+        });
+        return reply.send({
+          ...serializeJob(updated),
+          refund_with_no_delivery_attestation_args: null,
+          refund_deferred_until: job.work_deadline.toISOString(),
+          transaction_hash: null,
+          relayer_address: null,
+          block_number: null,
+          gas_used: null,
+          refund_amount: null,
+        });
+      }
+
       const checkedAt = Math.floor(Date.now() / 1000);
       const attestation = await signNoDeliveryAttestation({
         ...ensureOnchainJob(job),
@@ -1215,7 +1300,7 @@ export async function jobsRoutes(app: FastifyInstance) {
       await prisma.job.updateMany({
         where: {
           request_id: job.request_id,
-          status: { in: [JobStatus.RUNNING, JobStatus.REFUNDED] },
+          status: { in: [JobStatus.RUNNING, JobStatus.FAILED, JobStatus.REFUNDED] },
         },
         data: {
           status: JobStatus.REFUNDED,
@@ -1238,6 +1323,7 @@ export async function jobsRoutes(app: FastifyInstance) {
       return reply.send({
         ...serializeJob(updated),
         refund_with_no_delivery_attestation_args: attestation.refund_with_no_delivery_attestation_args,
+        refund_deferred_until: null,
         transaction_hash: relayed.transaction_hash,
         relayer_address: relayed.relayer_address,
         block_number: relayed.block_number,

@@ -32,6 +32,8 @@ const ESCROW_ABI = [
   "error DeliveredBeforeStart()",
   "error FutureDeliveredAt()",
   "error ReviewTimeoutNotElapsed()",
+  "error CheckedBeforeWorkDeadline()",
+  "error FutureCheckedAt()",
 ] as const;
 
 const JOB_STATUSES = ["NONE", "FUNDED", "RUNNING", "SETTLED", "REFUNDED"] as const;
