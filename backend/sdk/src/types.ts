@@ -11,7 +11,8 @@ export interface SkillHubClientOptions {
    *
    * When present, the SDK automatically adds the provider auth headers to
    * POST /jobs/start-next-job-request, /jobs/:id/start-job,
-   * /jobs/:id/job-finish and /jobs/:id/provider-cancel.
+   * /jobs/:id/job-finish, /jobs/:id/provider-cancel and
+   * DELETE /providers/:id.
    */
   providerAuth?: ProviderRequestAuthOptions;
 
@@ -102,7 +103,7 @@ export interface CreateProviderInput {
   timeout_seconds?: number;
 }
 
-export interface UpdateProviderInput extends Partial<CreateProviderInput> {
+export interface UpdateProviderInput extends Partial<Omit<CreateProviderInput, "trust_level">> {
   status?: ProviderStatus;
 }
 

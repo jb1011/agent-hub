@@ -12,6 +12,7 @@ import { agentHubRegistryAddress, buildRegisterProviderCall } from "../lib/regis
 import { RegisterProviderAuthorizationError } from "../lib/register-provider-authorization.js";
 import { syncProviderRegisteredFromTransaction } from "../listeners/registry-provider-registered.js";
 import { requireUserAuth } from "../lib/auth.js";
+import { verifyProviderRequestHeaders } from "../lib/provider-request-auth.js";
 
 const evmAddressSchema = (fieldName: string) =>
   z.string().refine(isAddress, `${fieldName}_must_be_evm_address`);
@@ -41,7 +42,6 @@ const createSchema = z.object({
 });
 
 const updateSchema = createSchema.partial().extend({
-  trust_level: z.enum(["UNVERIFIED", "VERIFIED", "CERTIFIED", "HOSTED"]).optional(),
   status: z.enum(["REGISTERED", "ACTIVE", "SUSPENDED"]).optional(),
 });
 
@@ -115,6 +115,10 @@ async function generateUniqueProviderRequestId(): Promise<string> {
 
 function sameWallet(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase();
+}
+
+function hasTrustLevelField(value: unknown): boolean {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && "trust_level" in value;
 }
 
 export async function providersRoutes(app: FastifyInstance) {
@@ -247,6 +251,9 @@ export async function providersRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const params = idParamsSchema.safeParse(req.params);
     if (!params.success) return sendZodError(reply, params.error);
+    if (hasTrustLevelField(req.body)) {
+      return reply.status(400).send({ error: "trust_level_cannot_be_updated" });
+    }
     const parsed = updateSchema.safeParse(req.body);
     if (!parsed.success) return sendZodError(reply, parsed.error);
     const providerInput = normalizeProviderAddresses(parsed.data);
@@ -339,7 +346,11 @@ export async function providersRoutes(app: FastifyInstance) {
       params: idParamsSchema,
       response: {
         204: z.null(),
+        400: z.object({ error: z.string(), details: z.unknown().optional() }),
+        401: z.object({ error: z.string() }),
+        403: z.object({ error: z.string() }),
         404: z.object({ error: z.string() }),
+        500: z.object({ error: z.string() }),
       },
     },
   }, async (req, reply) => {
@@ -349,6 +360,10 @@ export async function providersRoutes(app: FastifyInstance) {
       where: { request_id: params.data.id },
     });
     if (!existing) return notFound(reply);
+    const auth = await verifyProviderRequestHeaders(req, reply, existing, {
+      providerIdMismatchError: "provider_id_does_not_match_provider",
+    });
+    if (!auth.ok) return auth.reply;
     await prisma.provider.delete({ where: { request_id: params.data.id } });
     return reply.status(204).send();
   });

@@ -1,7 +1,7 @@
 import type { HealthResponse, SkillHubClientOptions } from "./types.js";
 import { ProvidersResource } from "./providers.js";
 import { JobsResource } from "./jobs.js";
-import { buildProviderRequestHeaders, isProviderAuthenticatedPath } from "./provider-auth.js";
+import { buildProviderRequestHeaders, isProviderAuthenticatedRequest } from "./provider-auth.js";
 
 function requestBodyString(init?: RequestInit): string {
   if (typeof init?.body === "string") return init.body;
@@ -33,7 +33,7 @@ export class SkillHubClient {
     const headers = new Headers(init?.headers);
     headers.set("Content-Type", "application/json");
 
-    if (this.providerAuth && isProviderAuthenticatedPath(path)) {
+    if (this.providerAuth && isProviderAuthenticatedRequest(path, init?.method)) {
       const authHeaders = await buildProviderRequestHeaders({
         path,
         body: requestBodyString(init),

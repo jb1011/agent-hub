@@ -39,6 +39,12 @@ export function isProviderAuthenticatedPath(path: string): boolean {
   return PROVIDER_AUTH_ROUTES.some((suffix) => pathname.endsWith(suffix));
 }
 
+export function isProviderAuthenticatedRequest(path: string, method = "GET"): boolean {
+  const pathname = path.split("?")[0] ?? path;
+  return isProviderAuthenticatedPath(path)
+    || (method.toUpperCase() === "DELETE" && /^\/providers\/[^/]+$/.test(pathname));
+}
+
 export function hashProviderRequestPart(value: string): string {
   const hash = keccak_256(utf8Bytes(value));
   return `0x${Array.from(hash, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;

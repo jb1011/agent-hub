@@ -49,7 +49,8 @@
           "const providerAuthRoutes = [\"/start-next-job-request\", \"/start-job\", \"/job-finish\", \"/provider-cancel\"];",
           "const requestUrl = pm.variables.replaceIn(pm.request.url.toString());",
           "const pathname = requestUrl.split(\"?\")[0];",
-          "const isProviderAuthRoute = providerAuthRoutes.some((suffix) => pathname.endsWith(suffix));",
+          "const isProviderDeleteRoute = pm.request.method === \"DELETE\" && /\\/providers\\/[^/?]+$/.test(pathname);",
+          "const isProviderAuthRoute = providerAuthRoutes.some((suffix) => pathname.endsWith(suffix)) || isProviderDeleteRoute;",
           "",
           "if (isProviderAuthRoute) {",
           "  const ethersPackage = pm.require(\"npm:ethers@6.16.0\");",
@@ -342,7 +343,15 @@
           "name": "Delete provider",
           "request": {
             "method": "DELETE",
-            "header": [],
+            "header": [
+              { "key": "X-Provider-Id", "value": "{{providerId}}" },
+              { "key": "X-Provider-Address", "value": "{{providerAddress}}" },
+              { "key": "X-Timestamp", "value": "{{providerRequestTimestamp}}" },
+              { "key": "X-Body-Hash", "value": "{{providerRequestBodyHash}}" },
+              { "key": "X-Signature", "value": "{{providerRequestSignature}}" },
+              { "key": "X-Nonce", "value": "{{providerRequestNonce}}" },
+              { "key": "X-Query-Hash", "value": "{{providerRequestQueryHash}}" }
+            ],
             "url": "{{baseUrl}}/providers/{{providerRequestId}}"
           }
         }

@@ -144,7 +144,8 @@ async function reserveProviderNonce(
 export async function verifyProviderRequestHeaders(
   req: FastifyRequest,
   reply: FastifyReply,
-  provider: AuthenticatedProvider
+  provider: AuthenticatedProvider,
+  options: { providerIdMismatchError?: string } = {}
 ): Promise<ProviderRequestAuthResult> {
   for (const name of REQUIRED_PROVIDER_AUTH_HEADERS) {
     if (!header(req, name)) {
@@ -164,7 +165,12 @@ export async function verifyProviderRequestHeaders(
     return { ok: false, reply: reply.status(400).send({ error: "provider_id_invalid" }) };
   }
   if (!providerIdMatches(provider, providerId)) {
-    return { ok: false, reply: reply.status(403).send({ error: "provider_id_does_not_match_job" }) };
+    return {
+      ok: false,
+      reply: reply.status(403).send({
+        error: options.providerIdMismatchError ?? "provider_id_does_not_match_job",
+      }),
+    };
   }
   if (!isAddress(providerAddressHeader)) {
     return { ok: false, reply: reply.status(400).send({ error: "provider_address_must_be_evm_address" }) };
